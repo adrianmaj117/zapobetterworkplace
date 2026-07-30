@@ -2,6 +2,7 @@
   "name": "zapobetterworkplace-inventory",
   "version": "1.0.0",
   "private": true,
+  "engines": { "node": ">=22.5.0" },
   "description": "Inventory and expiry tracker for ZapoBetterWorkPlace",
   "main": "server.js",
   "scripts": {

@@ -5,7 +5,8 @@ const { DatabaseSync } = require('node:sqlite');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const db = new DatabaseSync(path.join(__dirname, 'zapobetterworkplace.db'));
+const dbPath = process.env.DATABASE_PATH || path.join(__dirname, 'zapobetterworkplace.db');
+const db = new DatabaseSync(dbPath);
 const sessions = new Set();
 
 db.exec('PRAGMA journal_mode = WAL');
