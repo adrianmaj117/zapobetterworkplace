@@ -31,6 +31,14 @@ db.exec(`
     movement_date TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY(product_id) REFERENCES products(id) ON DELETE CASCADE
   );
+  CREATE TABLE IF NOT EXISTS product_batches (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_id INTEGER NOT NULL,
+    quantity REAL NOT NULL CHECK(quantity >= 0),
+    expiration_date TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(product_id) REFERENCES products(id) ON DELETE CASCADE
+  );
 `);
 if (!db.prepare("PRAGMA table_info(products)").all().some(column => column.name === 'weight_grams')) {
   db.exec('ALTER TABLE products ADD COLUMN weight_grams REAL');
@@ -193,6 +201,25 @@ app.post('/api/products/:id/movement', (req, res) => {
 
 app.get('/api/products/:id/movements', (req, res) => {
   res.json(db.prepare('SELECT * FROM movements WHERE product_id = ? ORDER BY movement_date DESC, id DESC LIMIT 30').all(Number(req.params.id)));
+});
+
+app.get('/api/products/:id/batches', (req, res) => {
+  res.json(db.prepare('SELECT * FROM product_batches WHERE product_id=? ORDER BY expiration_date IS NULL, expiration_date ASC').all(Number(req.params.id)));
+});
+
+app.post('/api/products/:id/batches', (req, res) => {
+  const product = productById(Number(req.params.id));
+  const quantity = Number(req.body.quantity);
+  const expiration = parseExpiration(req.body.expiration_date);
+  if (!product || !Number.isFinite(quantity) || quantity <= 0) return res.status(400).json({ error: 'Podaj prawidłową ilość partii.' });
+  db.exec('BEGIN');
+  try {
+    db.prepare('INSERT INTO product_batches (product_id, quantity, expiration_date) VALUES (?, ?, ?)').run(product.id, quantity, expiration);
+    db.prepare('UPDATE products SET quantity=quantity+?, updated_at=CURRENT_TIMESTAMP WHERE id=?').run(quantity, product.id);
+    db.prepare("INSERT INTO movements (product_id, type, quantity, note) VALUES (?, 'add', ?, 'Nowa partia')").run(product.id, quantity);
+    db.exec('COMMIT');
+  } catch (error) { db.exec('ROLLBACK'); throw error; }
+  res.status(201).json(productById(product.id));
 });
 
 app.post('/api/import/preview', (req, res) => {
