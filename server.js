@@ -158,6 +158,20 @@ app.get('/api/categories', (req, res) => {
   res.json(db.prepare("SELECT DISTINCT category FROM products WHERE category <> '' ORDER BY category COLLATE NOCASE").all().map(r => r.category));
 });
 
+db.exec(`CREATE TABLE IF NOT EXISTS category_images (
+  category TEXT PRIMARY KEY,
+  image_data TEXT NOT NULL,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+)`);
+app.get('/api/category-images', (req, res) => res.json(db.prepare('SELECT category, image_data FROM category_images').all()));
+app.post('/api/category-images', (req, res) => {
+  const { category, image_data } = req.body;
+  if (!category || !String(image_data || '').startsWith('data:image/')) return res.status(400).json({ error: 'Wybierz prawidłowe zdjęcie.' });
+  db.prepare(`INSERT INTO category_images (category, image_data, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(category) DO UPDATE SET image_data=excluded.image_data, updated_at=CURRENT_TIMESTAMP`).run(category, image_data);
+  res.status(201).json({ category });
+});
+
 app.post('/api/products', (req, res) => {
   const { name, category = 'Inne', brand = '', unit = 'szt.', quantity = 0, min_quantity = 0, weight_value = null, weight_unit = null, expiration_date = null, received_date = null, image_data = null, notes = '' } = req.body;
   if (!name || !name.trim() || !validNumber(quantity) || quantity < 0 || !validNumber(min_quantity) || min_quantity < 0) {
