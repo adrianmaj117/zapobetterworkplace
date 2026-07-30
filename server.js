@@ -1,11 +1,17 @@
 const path = require('path');
+const fs = require('fs');
 const crypto = require('crypto');
 const express = require('express');
 const { DatabaseSync } = require('node:sqlite');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const dbPath = process.env.DATABASE_PATH || path.join(__dirname, 'zapobetterworkplace.db');
+const bundledDbPath = path.join(__dirname, 'zapobetterworkplace.db');
+const dbPath = process.env.DATABASE_PATH || bundledDbPath;
+if (dbPath !== bundledDbPath && !fs.existsSync(dbPath) && fs.existsSync(bundledDbPath)) {
+  fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+  fs.copyFileSync(bundledDbPath, dbPath);
+}
 const db = new DatabaseSync(dbPath);
 const sessions = new Set();
 
