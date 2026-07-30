@@ -47,6 +47,9 @@ if (!db.prepare("PRAGMA table_info(products)").all().some(column => column.name 
   db.exec('ALTER TABLE products ADD COLUMN weight_value REAL');
   db.exec('ALTER TABLE products ADD COLUMN weight_unit TEXT');
 }
+for (const [name, type] of [['brand','TEXT'], ['received_date','TEXT'], ['image_data','TEXT']]) {
+  if (!db.prepare('PRAGMA table_info(products)').all().some(column => column.name === name)) db.exec(`ALTER TABLE products ADD COLUMN ${name} ${type}`);
+}
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
@@ -149,12 +152,12 @@ app.get('/api/categories', (req, res) => {
 });
 
 app.post('/api/products', (req, res) => {
-  const { name, category = 'Inne', unit = 'szt.', quantity = 0, min_quantity = 0, weight_value = null, weight_unit = null, expiration_date = null, notes = '' } = req.body;
+  const { name, category = 'Inne', brand = '', unit = 'szt.', quantity = 0, min_quantity = 0, weight_value = null, weight_unit = null, expiration_date = null, received_date = null, image_data = null, notes = '' } = req.body;
   if (!name || !name.trim() || !validNumber(quantity) || quantity < 0 || !validNumber(min_quantity) || min_quantity < 0) {
     return res.status(400).json({ error: 'Podaj nazwę oraz prawidłowe ilości.' });
   }
-  const result = db.prepare(`INSERT INTO products (name, category, unit, quantity, min_quantity, weight_value, weight_unit, expiration_date, notes, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`).run(name.trim(), category.trim() || 'Inne', unit.trim() || 'szt.', quantity, min_quantity, validNumber(weight_value) && weight_value > 0 ? weight_value : null, weight_unit || null, parseExpiration(expiration_date), notes.trim());
+  const result = db.prepare(`INSERT INTO products (name, category, brand, unit, quantity, min_quantity, weight_value, weight_unit, expiration_date, received_date, image_data, notes, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`).run(name.trim(), category.trim() || 'Inne', brand.trim(), unit.trim() || 'szt.', quantity, min_quantity, validNumber(weight_value) && weight_value > 0 ? weight_value : null, weight_unit || null, parseExpiration(expiration_date), parseExpiration(received_date), image_data || null, notes.trim());
   if (quantity > 0) db.prepare("INSERT INTO movements (product_id, type, quantity, note) VALUES (?, 'add', ?, 'Stan początkowy')").run(result.lastInsertRowid, quantity);
   res.status(201).json(productById(result.lastInsertRowid));
 });
