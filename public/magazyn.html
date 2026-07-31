@@ -130,6 +130,11 @@
       originalRender();
       if (state.level === 'products') return;
       const tiles = document.querySelector('#tiles');
+      if (state.level === 'category') [...tiles.querySelectorAll('[data-value]')].forEach(tile => {
+        const value = tile.dataset.value;
+        const exists = all.some(item => item.category === value) || savedPaths.some(path => path.level === 'category' && path.category === value);
+        if (!exists) tile.remove();
+      });
       const present = [...tiles.querySelectorAll('[data-value]')].map(tile => tile.dataset.value);
       const choices = savedPaths.filter(path =>
         (state.level === 'category' && path.level === 'category') ||

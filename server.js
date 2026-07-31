@@ -240,15 +240,18 @@ app.patch('/api/paths/rename', (req, res) => {
   let result;
   if (level === 'category') {
     result = db.prepare('UPDATE products SET category=?, updated_at=CURRENT_TIMESTAMP WHERE category=?').run(next, category);
+    db.prepare('UPDATE inventory_paths SET category=? WHERE category=?').run(next, category);
     moveTileImage(`category:${category}`, `category:${next}`);
   } else if (level === 'brand') {
     result = db.prepare("UPDATE products SET brand=?, updated_at=CURRENT_TIMESTAMP WHERE category=? AND (COALESCE(brand,'')=COALESCE(?, '') OR (?='' AND brand='Pozostałe'))").run(next, category, sourceBrand, sourceBrand);
+    db.prepare("UPDATE inventory_paths SET brand=? WHERE category=? AND brand=?").run(next, category, brand);
     moveTileImage(`brand:${category}:${brand}`, `brand:${category}:${next}`);
   } else if (level === 'weight') {
     const match = next.match(/^(\d+(?:[.,]\d+)?)\s*(g|kg|ml|l)$/i);
     if (!match) return res.status(400).json({ error: 'Wpisz gramaturę np. 200 ml lub 1 kg.' });
     const nextValue = Number(match[1].replace(',', '.')), nextUnit = match[2].toLowerCase();
     result = db.prepare("UPDATE products SET weight_value=?, weight_unit=?, updated_at=CURRENT_TIMESTAMP WHERE category=? AND (COALESCE(brand,'')=COALESCE(?, '') OR (?='' AND brand='Pozostałe')) AND COALESCE(weight_value,-1)=COALESCE(?,-1) AND COALESCE(weight_unit,'')=COALESCE(?, '')").run(nextValue, nextUnit, category, sourceBrand, sourceBrand, weight_value, weight_unit);
+    db.prepare('UPDATE inventory_paths SET weight_value=?, weight_unit=? WHERE level=? AND category=? AND brand=? AND weight_value=? AND weight_unit=?').run(nextValue, nextUnit, 'weight', category, brand, weight_value, weight_unit);
     moveTileImage(`weight:${category}:${brand}:${weight_value} ${weight_unit}`, `weight:${category}:${brand}:${nextValue} ${nextUnit}`);
   } else return res.status(400).json({ error: 'Nieznany poziom ścieżki.' });
   res.json({ changed: result.changes });
