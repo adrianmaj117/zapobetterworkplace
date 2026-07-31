@@ -10,7 +10,10 @@
   const localDate = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
   const normalize = value => String(value || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
   const label = item => `${item.name} — ${brand(item)} · ${size(item)} (stan: ${item.quantity} ${item.unit})`;
-  const productOptions = selected => `<option value="">Dopasuj produkt z magazynu…</option>${all.slice().sort((a,b) => a.name.localeCompare(b.name, 'pl')).map(item => `<option value="${item.id}" ${Number(selected) === item.id ? 'selected' : ''}>${esc(label(item))}</option>`).join('')}`;
+  const productOptions = selected => {
+    const categories = [...new Set(all.map(item => item.category))].sort((a,b) => a.localeCompare(b, 'pl'));
+    return `<option value="">Dopasuj produkt z magazynu…</option>${categories.map(category => `<optgroup label="${esc(category)}">${all.filter(item => item.category === category).sort((a,b) => a.name.localeCompare(b.name, 'pl')).map(item => `<option value="${item.id}" ${Number(selected) === item.id ? 'selected' : ''}>${esc(label(item))}</option>`).join('')}</optgroup>`).join('')}`;
+  };
 
   function addRow(productId = '', quantity = '', source = '') {
     const row = document.createElement('div'); row.className = 'demand-row';
