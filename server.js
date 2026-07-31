@@ -187,10 +187,17 @@ app.put('/api/products/:id', (req, res) => {
   const id = Number(req.params.id);
   const existing = productById(id);
   if (!existing) return res.status(404).json({ error: 'Nie znaleziono produktu.' });
-  const { name, category, brand = '', unit, min_quantity = 0, weight_value = null, weight_unit = null, expiration_date, notes } = req.body;
+  const { name, category, brand = '', unit, quantity = existing.quantity, min_quantity = 0, weight_value = null, weight_unit = null, received_date, expiration_date, notes } = req.body;
   if (!name || !name.trim() || !validNumber(min_quantity) || min_quantity < 0) return res.status(400).json({ error: 'Sprawdź wymagane pola.' });
-  db.prepare(`UPDATE products SET name=?, category=?, brand=?, unit=?, min_quantity=?, weight_value=?, weight_unit=?, expiration_date=?, notes=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`)
-    .run(name.trim(), (category || 'Inne').trim(), brand.trim(), (unit || 'szt.').trim(), min_quantity, validNumber(weight_value) && weight_value > 0 ? weight_value : null, weight_unit || null, parseExpiration(expiration_date), (notes || '').trim(), id);
+  if (!validNumber(quantity) || quantity < 0) return res.status(400).json({ error: 'Podaj prawidłową ilość.' });
+  db.exec('BEGIN');
+  try {
+    db.prepare(`UPDATE products SET name=?, category=?, brand=?, unit=?, quantity=?, min_quantity=?, weight_value=?, weight_unit=?, received_date=?, expiration_date=?, notes=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`)
+      .run(name.trim(), (category || 'Inne').trim(), brand.trim(), (unit || 'szt.').trim(), quantity, min_quantity, validNumber(weight_value) && weight_value > 0 ? weight_value : null, weight_unit || null, parseExpiration(received_date), parseExpiration(expiration_date), (notes || '').trim(), id);
+    const difference = quantity - existing.quantity;
+    if (difference !== 0) db.prepare("INSERT INTO movements (product_id, type, quantity, note) VALUES (?, 'adjustment', ?, 'Edycja ilości')").run(id, Math.abs(difference));
+    db.exec('COMMIT');
+  } catch (error) { db.exec('ROLLBACK'); throw error; }
   res.json(productById(id));
 });
 
