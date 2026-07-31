@@ -217,7 +217,10 @@ app.get('/api/products', (req, res) => {
     newest: 'created_at DESC'
   }[sort] || 'name COLLATE NOCASE ASC';
   const rows = db.prepare(`
-    SELECT * FROM products
+    SELECT id, name, category, unit, quantity, min_quantity, expiration_date, notes, created_at, updated_at,
+      weight_grams, weight_value, weight_unit, brand, received_date,
+      CASE WHEN image_data IS NOT NULL AND image_data <> '' THEN 1 ELSE 0 END AS has_image
+    FROM products
     WHERE name LIKE @search AND (@category = '' OR category = @category)
     ORDER BY ${orderBy}
   `).all({ search: `%${search.trim()}%`, category });
@@ -542,6 +545,12 @@ app.post('/api/demand/runs/:id/reverse', (req, res) => {
 
 app.get('/api/products/:id/movements', (req, res) => {
   res.json(db.prepare('SELECT * FROM movements WHERE product_id = ? ORDER BY movement_date DESC, id DESC LIMIT 30').all(Number(req.params.id)));
+});
+
+app.get('/api/products/:id/image', (req, res) => {
+  const product = productById(Number(req.params.id));
+  if (!product) return res.status(404).json({ error: 'Nie znaleziono produktu.' });
+  res.json({ image_data: product.image_data || null });
 });
 
 app.post('/api/products/:id/image', (req, res) => {
