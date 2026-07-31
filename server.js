@@ -188,6 +188,15 @@ db.exec(`CREATE TABLE IF NOT EXISTS category_images (
   image_data TEXT NOT NULL,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 )`);
+function moveTileImage(from, to) {
+  if (from === to) return;
+  const image = db.prepare('SELECT image_data FROM category_images WHERE category=?').get(from);
+  if (!image) return;
+  // Destination can already have its own photo. Replace it deliberately,
+  // rather than letting the UNIQUE key stop the whole rename operation.
+  db.prepare('DELETE FROM category_images WHERE category=?').run(to);
+  db.prepare('UPDATE category_images SET category=?, updated_at=CURRENT_TIMESTAMP WHERE category=?').run(to, from);
+}
 app.get('/api/category-images', (req, res) => res.json(db.prepare('SELECT category, image_data FROM category_images').all()));
 app.post('/api/category-images', (req, res) => {
   const { category, image_data } = req.body;
@@ -205,16 +214,16 @@ app.patch('/api/paths/rename', (req, res) => {
   let result;
   if (level === 'category') {
     result = db.prepare('UPDATE products SET category=?, updated_at=CURRENT_TIMESTAMP WHERE category=?').run(next, category);
-    db.prepare("UPDATE category_images SET category=? WHERE category=?").run(`category:${next}`, `category:${category}`);
+    moveTileImage(`category:${category}`, `category:${next}`);
   } else if (level === 'brand') {
     result = db.prepare("UPDATE products SET brand=?, updated_at=CURRENT_TIMESTAMP WHERE category=? AND COALESCE(brand,'')=COALESCE(?, '')").run(next, category, sourceBrand);
-    db.prepare("UPDATE category_images SET category=? WHERE category=?").run(`brand:${category}:${next}`, `brand:${category}:${brand}`);
+    moveTileImage(`brand:${category}:${brand}`, `brand:${category}:${next}`);
   } else if (level === 'weight') {
     const match = next.match(/^(\d+(?:[.,]\d+)?)\s*(g|kg|ml|l)$/i);
     if (!match) return res.status(400).json({ error: 'Wpisz gramaturę np. 200 ml lub 1 kg.' });
     const nextValue = Number(match[1].replace(',', '.')), nextUnit = match[2].toLowerCase();
     result = db.prepare("UPDATE products SET weight_value=?, weight_unit=?, updated_at=CURRENT_TIMESTAMP WHERE category=? AND COALESCE(brand,'')=COALESCE(?, '') AND COALESCE(weight_value,-1)=COALESCE(?,-1) AND COALESCE(weight_unit,'')=COALESCE(?, '')").run(nextValue, nextUnit, category, sourceBrand, weight_value, weight_unit);
-    db.prepare("UPDATE category_images SET category=? WHERE category=?").run(`weight:${category}:${brand}:${nextValue} ${nextUnit}`, `weight:${category}:${brand}:${weight_value} ${weight_unit}`);
+    moveTileImage(`weight:${category}:${brand}:${weight_value} ${weight_unit}`, `weight:${category}:${brand}:${nextValue} ${nextUnit}`);
   } else return res.status(400).json({ error: 'Nieznany poziom ścieżki.' });
   res.json({ changed: result.changes });
 });
