@@ -41,10 +41,10 @@
       <div class="form-grid">
         <label>Kategoria<select id="category" required></select></label>
         <label>Firma<input id="brand" placeholder="np. Sady Wincenta"></label>
-        <label>Nazwa artykułu<input id="name" required></label>
-        <label>Ilość sztuk<input id="quantity" type="number" min="0" required></label>
         <label>Wartość gramatury<input id="weightValue" type="number" min="0" placeholder="np. 200"></label>
         <label>Gramatura<select id="weightUnit"><option>g</option><option>kg</option><option>ml</option><option>l</option></select></label>
+        <label>Nazwa artykułu<input id="name" required></label>
+        <label>Ilość sztuk<input id="quantity" type="number" min="0" required></label>
         <label>Data przyjęcia<input id="received" type="date"></label>
         <label>Data ważności<input id="expiry" type="date"></label>
         <label class="full">Zdjęcie produktu z telefonu<input id="photo" type="file" accept="image/*"></label>
@@ -83,6 +83,18 @@
       <label>Przenieś do<select id="moveTarget" required></select></label>
       <p class="path-help">Wszystkie artykuły z wybranego kafelka zostaną przeniesione do wskazanego miejsca.</p>
       <div class="form-actions"><button type="button" id="cancelMove" class="button ghost">Anuluj</button><button type="submit" class="button primary">Przenieś</button></div>
+    </form>
+  </dialog>
+  <dialog id="productMoveDialog">
+    <form id="productMoveForm">
+      <div class="modal-head"><h2>Przenieś produkt</h2><button type="button" id="closeProductMove" class="icon-btn">×</button></div>
+      <div class="form-grid">
+        <label>Kategoria<select id="moveProductCategory" required></select></label>
+        <label>Firma<select id="moveProductBrand" required></select></label>
+        <label>Gramatura<select id="moveProductWeight" required></select></label>
+      </div>
+      <p class="path-help">Produkt zostanie przeniesiony do wybranej ścieżki: kategoria → firma → gramatura.</p>
+      <div class="form-actions"><button type="button" id="cancelProductMove" class="button ghost">Anuluj</button><button type="submit" class="button primary">Przenieś produkt</button></div>
     </form>
   </dialog>
   <script src="warehouse.js"></script>
@@ -140,6 +152,48 @@
         savedPaths = await api('/api/paths'); render();
       } catch (error) { alert(error.message); }
     }, true);
+    let productToMove = null;
+    const productActions = new MutationObserver(() => document.querySelectorAll('.product-actions').forEach(actions => {
+      if (actions.querySelector('[data-product-move]')) return;
+      const edit = actions.querySelector('[data-edit]'); if (!edit) return;
+      edit.textContent = 'Edytuj';
+      const button = document.createElement('button'); button.className = 'small-btn';
+      button.dataset.productMove = edit.dataset.edit; button.textContent = 'Przenieś'; actions.append(button);
+    }));
+    productActions.observe(document.querySelector('#products'), { childList: true, subtree: true });
+    const options = (select, values) => select.innerHTML = values.map(value => `<option>${esc(value)}</option>`).join('');
+    const productCategories = () => [...new Set([...all.map(item => item.category), ...savedPaths.filter(path => path.level === 'category').map(path => path.category)])];
+    const productBrands = category => [...new Set([...all.filter(item => item.category === category).map(brand), ...savedPaths.filter(path => path.level === 'brand' && path.category === category).map(path => path.brand)])];
+    const productWeights = (category, company) => [...new Set([...all.filter(item => item.category === category && brand(item) === company).map(size), ...savedPaths.filter(path => path.level === 'weight' && path.category === category && path.brand === company).map(path => `${path.weight_value} ${path.weight_unit}`)])];
+    function updateMoveBrands() { options(document.querySelector('#moveProductBrand'), productBrands(document.querySelector('#moveProductCategory').value)); updateMoveWeights(); }
+    function updateMoveWeights() { options(document.querySelector('#moveProductWeight'), productWeights(document.querySelector('#moveProductCategory').value, document.querySelector('#moveProductBrand').value)); }
+    document.querySelector('#moveProductCategory').onchange = updateMoveBrands;
+    document.querySelector('#moveProductBrand').onchange = updateMoveWeights;
+    document.addEventListener('click', event => {
+      const button = event.target.closest('[data-product-move]'); if (!button) return;
+      event.preventDefault(); event.stopImmediatePropagation(); productToMove = all.find(item => item.id === Number(button.dataset.productMove)); if (!productToMove) return;
+      options(document.querySelector('#moveProductCategory'), productCategories());
+      document.querySelector('#moveProductCategory').value = productToMove.category;
+      updateMoveBrands(); document.querySelector('#moveProductBrand').value = brand(productToMove);
+      updateMoveWeights(); document.querySelector('#moveProductWeight').value = size(productToMove);
+      document.querySelector('#productMoveDialog').showModal();
+    }, true);
+    for (const id of ['cancelProductMove', 'closeProductMove']) document.querySelector('#' + id).onclick = () => document.querySelector('#productMoveDialog').close();
+    document.querySelector('#productMoveForm').onsubmit = async event => {
+      event.preventDefault(); if (!productToMove) return;
+      const match = document.querySelector('#moveProductWeight').value.match(/^(\d+(?:\.\d+)?)\s*(g|kg|ml|l)$/i);
+      if (!match) return alert('Wybierz prawidłową gramaturę.');
+      try {
+        await api(`/api/products/${productToMove.id}`, { method: 'PUT', body: JSON.stringify({
+          name: productToMove.name, category: document.querySelector('#moveProductCategory').value,
+          brand: document.querySelector('#moveProductBrand').value === 'Pozostałe' ? '' : document.querySelector('#moveProductBrand').value,
+          quantity: productToMove.quantity, unit: productToMove.unit, min_quantity: productToMove.min_quantity || 0,
+          weight_value: Number(match[1]), weight_unit: match[2].toLowerCase(), received_date: productToMove.received_date,
+          expiration_date: productToMove.expiration_date, notes: productToMove.notes || ''
+        }) });
+        document.querySelector('#productMoveDialog').close(); await load();
+      } catch (error) { alert(error.message); }
+    };
   </script>
 </body>
 </html>
