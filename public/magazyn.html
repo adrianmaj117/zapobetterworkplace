@@ -77,6 +77,14 @@
       <div class="form-actions"><button type="button" id="cancelPath" class="button ghost">Anuluj</button><button type="submit" class="button primary">Zapisz</button></div>
     </form>
   </dialog>
+  <dialog id="moveDialog">
+    <form id="moveForm">
+      <div class="modal-head"><h2 id="moveTitle">Przenieś gałąź</h2><button type="button" id="closeMove" class="icon-btn">×</button></div>
+      <label>Przenieś do<select id="moveTarget" required></select></label>
+      <p class="path-help">Wszystkie artykuły z wybranego kafelka zostaną przeniesione do wskazanego miejsca.</p>
+      <div class="form-actions"><button type="button" id="cancelMove" class="button ghost">Anuluj</button><button type="submit" class="button primary">Przenieś</button></div>
+    </form>
+  </dialog>
   <script src="warehouse.js"></script>
 </body>
 </html>

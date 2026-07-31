@@ -219,6 +219,26 @@ app.patch('/api/paths/rename', (req, res) => {
   res.json({ changed: result.changes });
 });
 
+app.patch('/api/paths/move', (req, res) => {
+  const { level, category = '', brand = '', weight_value = null, weight_unit = '', target = '' } = req.body;
+  const destination = String(target).trim();
+  const sourceBrand = brand === 'Pozostałe' ? '' : brand;
+  if (!destination) return res.status(400).json({ error: 'Wybierz miejsce docelowe.' });
+  let result;
+  if (level === 'category') {
+    result = db.prepare('UPDATE products SET category=?, updated_at=CURRENT_TIMESTAMP WHERE category=?').run(destination, category);
+  } else if (level === 'brand') {
+    const destinationBrand = destination === 'Pozostałe' ? '' : destination;
+    result = db.prepare("UPDATE products SET brand=?, updated_at=CURRENT_TIMESTAMP WHERE category=? AND COALESCE(brand,'')=COALESCE(?, '')").run(destinationBrand, category, sourceBrand);
+  } else if (level === 'weight') {
+    const match = destination.match(/^(\d+(?:[.,]\d+)?)\s*(g|kg|ml|l)$/i);
+    if (!match) return res.status(400).json({ error: 'Wybierz prawidłową gramaturę.' });
+    result = db.prepare("UPDATE products SET weight_value=?, weight_unit=?, updated_at=CURRENT_TIMESTAMP WHERE category=? AND COALESCE(brand,'')=COALESCE(?, '') AND COALESCE(weight_value,-1)=COALESCE(?,-1) AND COALESCE(weight_unit,'')=COALESCE(?, '')")
+      .run(Number(match[1].replace(',', '.')), match[2].toLowerCase(), category, sourceBrand, weight_value, weight_unit);
+  } else return res.status(400).json({ error: 'Nieznany poziom ścieżki.' });
+  res.json({ moved: result.changes });
+});
+
 app.post('/api/products', (req, res) => {
   const { name, category = 'Inne', brand = '', unit = 'szt.', quantity = 0, min_quantity = 0, weight_value = null, weight_unit = null, expiration_date = null, received_date = null, image_data = null, notes = '' } = req.body;
   if (!name || !name.trim() || !validNumber(quantity) || quantity < 0 || !validNumber(min_quantity) || min_quantity < 0) {
