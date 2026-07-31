@@ -20,6 +20,7 @@
       <strong class="brand-one-line">ZapoBetterWorkPlace</strong>
     </button>
     <div class="head-buttons">
+      <button id="showInventory" class="small-btn">▦ Pokaż stany</button>
       <button id="demandHistory" class="small-btn">▤ Historia dnia</button>
       <button id="download" class="small-btn">⇩ Pobierz stany</button>
       <button id="logout" class="small-btn">Wyloguj</button>
@@ -39,6 +40,11 @@
       <button id="back" class="small-btn" hidden>← Wstecz</button>
       <div class="tiles" id="tiles"></div>
       <div class="products" id="products"></div>
+    </section>
+    <section id="inventoryOverview" class="inventory-overview" hidden>
+      <div class="overview-head"><div><p class="eyebrow">PEŁNY PRZEGLĄD</p><h2>Wszystkie stany magazynowe</h2></div><button type="button" id="hideInventory" class="small-btn">Ukryj stany</button></div>
+      <label class="overview-search">Szukaj produktu, firmy lub kategorii<input id="inventorySearch" type="search" placeholder="Np. jabłko, Sady Wincenta, kawa"></label>
+      <div id="inventoryTables" class="inventory-tables"></div>
     </section>
   </main>
   <dialog id="addDialog">
@@ -358,5 +364,6 @@
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js" defer></script>
   <script src="demand.js" defer></script>
   <script src="history.js" defer></script>
+  <script src="inventory-overview.js" defer></script>
 </body>
 </html>
