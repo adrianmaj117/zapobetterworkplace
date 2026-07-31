@@ -85,8 +85,12 @@
   <dialog id="moveDialog">
     <form id="moveForm">
       <div class="modal-head"><h2 id="moveTitle">Przenieś gałąź</h2><button type="button" id="closeMove" class="icon-btn">×</button></div>
-      <label>Przenieś do<select id="moveTarget" required></select></label>
-      <p class="path-help">Wszystkie artykuły z wybranego kafelka zostaną przeniesione do wskazanego miejsca.</p>
+      <div class="form-grid">
+        <label>Kategoria<select id="moveCategory" required></select></label>
+        <label>Firma<select id="moveBrand" required></select></label>
+        <label>Gramatura<select id="moveWeight" required></select></label>
+      </div>
+      <p class="path-help">Wszystkie artykuły z wybranego kafelka zostaną przeniesione do wybranej ścieżki: kategoria → firma → gramatura.</p>
       <div class="form-actions"><button type="button" id="cancelMove" class="button ghost">Anuluj</button><button type="submit" class="button primary">Przenieś</button></div>
     </form>
   </dialog>
@@ -209,6 +213,34 @@
           expiration_date: productToMove.expiration_date, notes: productToMove.notes || ''
         }) });
         document.querySelector('#productMoveDialog').close(); await load();
+      } catch (error) { alert(error.message); }
+    };
+    const previousOpenMove = openMove;
+    openMove = value => {
+      moveEdit = pathData(value);
+      document.querySelector('#moveTitle').textContent = 'Przenieś: ' + value;
+      options(document.querySelector('#moveCategory'), productCategories());
+      document.querySelector('#moveCategory').value = state.category || productCategories()[0];
+      updateBranchMoveBrands(); document.querySelector('#moveBrand').value = state.brand || document.querySelector('#moveBrand').value;
+      updateBranchMoveWeights(); document.querySelector('#moveDialog').showModal();
+    };
+    function updateBranchMoveBrands() {
+      options(document.querySelector('#moveBrand'), productBrands(document.querySelector('#moveCategory').value));
+      updateBranchMoveWeights();
+    }
+    function updateBranchMoveWeights() {
+      options(document.querySelector('#moveWeight'), productWeights(document.querySelector('#moveCategory').value, document.querySelector('#moveBrand').value));
+    }
+    document.querySelector('#moveCategory').onchange = updateBranchMoveBrands;
+    document.querySelector('#moveBrand').onchange = updateBranchMoveWeights;
+    document.querySelector('#moveForm').onsubmit = async event => {
+      event.preventDefault();
+      try {
+        await api('/api/paths/move-full', { method: 'PATCH', body: JSON.stringify({
+          ...moveEdit, target_category: document.querySelector('#moveCategory').value,
+          target_brand: document.querySelector('#moveBrand').value, target_weight: document.querySelector('#moveWeight').value
+        }) });
+        document.querySelector('#moveDialog').close(); state = { level: 'category' }; await load();
       } catch (error) { alert(error.message); }
     };
   </script>

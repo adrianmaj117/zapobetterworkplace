@@ -242,13 +242,13 @@ app.patch('/api/paths/rename', (req, res) => {
     result = db.prepare('UPDATE products SET category=?, updated_at=CURRENT_TIMESTAMP WHERE category=?').run(next, category);
     moveTileImage(`category:${category}`, `category:${next}`);
   } else if (level === 'brand') {
-    result = db.prepare("UPDATE products SET brand=?, updated_at=CURRENT_TIMESTAMP WHERE category=? AND COALESCE(brand,'')=COALESCE(?, '')").run(next, category, sourceBrand);
+    result = db.prepare("UPDATE products SET brand=?, updated_at=CURRENT_TIMESTAMP WHERE category=? AND (COALESCE(brand,'')=COALESCE(?, '') OR (?='' AND brand='Pozostałe'))").run(next, category, sourceBrand, sourceBrand);
     moveTileImage(`brand:${category}:${brand}`, `brand:${category}:${next}`);
   } else if (level === 'weight') {
     const match = next.match(/^(\d+(?:[.,]\d+)?)\s*(g|kg|ml|l)$/i);
     if (!match) return res.status(400).json({ error: 'Wpisz gramaturę np. 200 ml lub 1 kg.' });
     const nextValue = Number(match[1].replace(',', '.')), nextUnit = match[2].toLowerCase();
-    result = db.prepare("UPDATE products SET weight_value=?, weight_unit=?, updated_at=CURRENT_TIMESTAMP WHERE category=? AND COALESCE(brand,'')=COALESCE(?, '') AND COALESCE(weight_value,-1)=COALESCE(?,-1) AND COALESCE(weight_unit,'')=COALESCE(?, '')").run(nextValue, nextUnit, category, sourceBrand, weight_value, weight_unit);
+    result = db.prepare("UPDATE products SET weight_value=?, weight_unit=?, updated_at=CURRENT_TIMESTAMP WHERE category=? AND (COALESCE(brand,'')=COALESCE(?, '') OR (?='' AND brand='Pozostałe')) AND COALESCE(weight_value,-1)=COALESCE(?,-1) AND COALESCE(weight_unit,'')=COALESCE(?, '')").run(nextValue, nextUnit, category, sourceBrand, sourceBrand, weight_value, weight_unit);
     moveTileImage(`weight:${category}:${brand}:${weight_value} ${weight_unit}`, `weight:${category}:${brand}:${nextValue} ${nextUnit}`);
   } else return res.status(400).json({ error: 'Nieznany poziom ścieżki.' });
   res.json({ changed: result.changes });
@@ -271,6 +271,21 @@ app.patch('/api/paths/move', (req, res) => {
     result = db.prepare("UPDATE products SET weight_value=?, weight_unit=?, updated_at=CURRENT_TIMESTAMP WHERE category=? AND COALESCE(brand,'')=COALESCE(?, '') AND COALESCE(weight_value,-1)=COALESCE(?,-1) AND COALESCE(weight_unit,'')=COALESCE(?, '')")
       .run(Number(match[1].replace(',', '.')), match[2].toLowerCase(), category, sourceBrand, weight_value, weight_unit);
   } else return res.status(400).json({ error: 'Nieznany poziom ścieżki.' });
+  res.json({ moved: result.changes });
+});
+
+app.patch('/api/paths/move-full', (req, res) => {
+  const { level, category = '', brand = '', weight_value = null, weight_unit = '', target_category = '', target_brand = '', target_weight = '' } = req.body;
+  const sourceBrand = brand === 'Pozostałe' ? '' : brand;
+  const destinationBrand = target_brand === 'Pozostałe' ? '' : target_brand;
+  const match = String(target_weight).match(/^(\d+(?:[.,]\d+)?)\s*(g|kg|ml|l)$/i);
+  if (!target_category || !target_brand || !match) return res.status(400).json({ error: 'Wybierz kategorię, firmę i gramaturę.' });
+  const targetValue = Number(match[1].replace(',', '.')), targetUnit = match[2].toLowerCase();
+  let result;
+  if (level === 'category') result = db.prepare('UPDATE products SET category=?, updated_at=CURRENT_TIMESTAMP WHERE category=?').run(target_category, category);
+  else if (level === 'brand') result = db.prepare("UPDATE products SET category=?, brand=?, updated_at=CURRENT_TIMESTAMP WHERE category=? AND (COALESCE(brand,'')=COALESCE(?, '') OR (?='' AND brand='Pozostałe'))").run(target_category, destinationBrand, category, sourceBrand, sourceBrand);
+  else if (level === 'weight') result = db.prepare("UPDATE products SET category=?, brand=?, weight_value=?, weight_unit=?, updated_at=CURRENT_TIMESTAMP WHERE category=? AND (COALESCE(brand,'')=COALESCE(?, '') OR (?='' AND brand='Pozostałe')) AND COALESCE(weight_value,-1)=COALESCE(?,-1) AND COALESCE(weight_unit,'')=COALESCE(?, '')").run(target_category, destinationBrand, targetValue, targetUnit, category, sourceBrand, sourceBrand, weight_value, weight_unit);
+  else return res.status(400).json({ error: 'Nieznany poziom ścieżki.' });
   res.json({ moved: result.changes });
 });
 
