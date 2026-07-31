@@ -58,7 +58,32 @@ for (const [name, type] of [['brand','TEXT'], ['received_date','TEXT'], ['image_
   if (!db.prepare('PRAGMA table_info(products)').all().some(column => column.name === name)) db.exec(`ALTER TABLE products ADD COLUMN ${name} ${type}`);
 }
 
-app.use(express.json());
+// Telefon zapisuje zdjęcia jako dane obrazu. Domyślny limit Expressa (100 KB)
+// był zbyt mały, dlatego pozwalamy na bezpieczne zdjęcia do 15 MB.
+function syncBundledInventory() {
+  if (dbPath === bundledDbPath || !fs.existsSync(bundledDbPath)) return 0;
+  const source = new DatabaseSync(bundledDbPath, { readOnly: true });
+  const products = source.prepare('SELECT name, category, brand, unit, quantity, min_quantity, weight_grams, weight_value, weight_unit, expiration_date, received_date, image_data, notes FROM products').all();
+  const exists = db.prepare("SELECT id FROM products WHERE name=? AND category=? AND COALESCE(brand,'')=COALESCE(?, '') AND COALESCE(weight_value,-1)=COALESCE(?,-1) AND COALESCE(weight_unit,'')=COALESCE(?, '') LIMIT 1");
+  const add = db.prepare(`INSERT INTO products (name, category, brand, unit, quantity, min_quantity, weight_grams, weight_value, weight_unit, expiration_date, received_date, image_data, notes, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`);
+  let added = 0;
+  db.exec('BEGIN');
+  try {
+    for (const item of products) {
+      if (exists.get(item.name, item.category, item.brand || '', item.weight_value, item.weight_unit || '')) continue;
+      const result = add.run(item.name, item.category, item.brand || '', item.unit || 'szt.', item.quantity, item.min_quantity || 0, item.weight_grams, item.weight_value, item.weight_unit, item.expiration_date, item.received_date, item.image_data, item.notes || '');
+      if (item.quantity > 0) db.prepare("INSERT INTO movements (product_id, type, quantity, note) VALUES (?, 'add', ?, 'Import bazy początkowej')").run(result.lastInsertRowid, item.quantity);
+      added += 1;
+    }
+    db.exec('COMMIT');
+  } catch (error) { db.exec('ROLLBACK'); throw error; }
+  source.close();
+  return added;
+}
+const bundledItemsAdded = syncBundledInventory();
+if (bundledItemsAdded) console.log(`Dodano ${bundledItemsAdded} brakujących produktów do bazy.`);
+
+app.use(express.json({ limit: '15mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 function authenticated(req) { return sessions.has(req.get('x-session-token')); }
