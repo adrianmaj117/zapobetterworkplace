@@ -47,17 +47,6 @@ db.exec(`
     FOREIGN KEY(product_id) REFERENCES products(id) ON DELETE CASCADE
   );
 `);
-if (!db.prepare('PRAGMA table_info(demand_runs)').all().some(column => column.name === 'demand_date')) db.exec('ALTER TABLE demand_runs ADD COLUMN demand_date TEXT');
-if (!db.prepare('PRAGMA table_info(demand_runs)').all().some(column => column.name === 'reversed_at')) db.exec('ALTER TABLE demand_runs ADD COLUMN reversed_at TEXT');
-if (!db.prepare('PRAGMA table_info(demand_items)').all().some(column => column.name === 'corrected_quantity')) db.exec('ALTER TABLE demand_items ADD COLUMN corrected_quantity REAL NOT NULL DEFAULT 0');
-db.exec(`CREATE TABLE IF NOT EXISTS demand_day_products (
-  demand_date TEXT NOT NULL,
-  product_id INTEGER NOT NULL,
-  opening_quantity REAL NOT NULL,
-  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY(demand_date, product_id),
-  FOREIGN KEY(product_id) REFERENCES products(id) ON DELETE CASCADE
-)`);
 if (!db.prepare("PRAGMA table_info(products)").all().some(column => column.name === 'weight_grams')) {
   db.exec('ALTER TABLE products ADD COLUMN weight_grams REAL');
 }
@@ -92,6 +81,17 @@ db.exec(`
     FOREIGN KEY(product_id) REFERENCES products(id) ON DELETE CASCADE
   );
 `);
+if (!db.prepare('PRAGMA table_info(demand_runs)').all().some(column => column.name === 'demand_date')) db.exec('ALTER TABLE demand_runs ADD COLUMN demand_date TEXT');
+if (!db.prepare('PRAGMA table_info(demand_runs)').all().some(column => column.name === 'reversed_at')) db.exec('ALTER TABLE demand_runs ADD COLUMN reversed_at TEXT');
+if (!db.prepare('PRAGMA table_info(demand_items)').all().some(column => column.name === 'corrected_quantity')) db.exec('ALTER TABLE demand_items ADD COLUMN corrected_quantity REAL NOT NULL DEFAULT 0');
+db.exec(`CREATE TABLE IF NOT EXISTS demand_day_products (
+  demand_date TEXT NOT NULL,
+  product_id INTEGER NOT NULL,
+  opening_quantity REAL NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY(demand_date, product_id),
+  FOREIGN KEY(product_id) REFERENCES products(id) ON DELETE CASCADE
+)`);
 
 function syncBundledInventory() {
   if (dbPath === bundledDbPath || !fs.existsSync(bundledDbPath)) return 0;
