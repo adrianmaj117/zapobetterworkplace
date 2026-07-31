@@ -1,1 +1,71 @@
-<!doctype html><html lang="pl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Stany magazynowe</title><link rel="stylesheet" href="styles.css"><link rel="stylesheet" href="warehouse.css"></head><body><header class="topbar"><div class="brand"><span class="brand-mark">Z</span><div><strong>ZapoBetter</strong><small>WorkPlace</small></div></div><div class="head-buttons"><button id="download" class="small-btn">⇩ Pobierz stany</button><button id="logout" class="small-btn">Wyloguj</button></div></header><main><section class="warehouse-head"><p class="eyebrow">STANY MAGAZYNOWE</p><div><h1>Stany magazynowe</h1><button id="add" class="button primary">＋ Dodaj artykuł</button></div></section><section><h2>Najkrótsze terminy ważności</h2><div class="nearest" id="nearest"></div></section><section class="browse"><div class="crumb" id="crumb">Kategorie</div><button id="back" class="small-btn" hidden>← Wstecz</button><div class="tiles" id="tiles"></div><div class="products" id="products"></div></section></main><dialog id="addDialog"><form method="dialog" id="addForm"><div class="modal-head"><h2>Dodaj dostawę</h2><button value="cancel" class="icon-btn">×</button></div><div class="form-grid"><label>Kategoria<select id="category" required></select></label><label>Firma<input id="brand" placeholder="np. Sady Wincenta"></label><label>Nazwa artykułu<input id="name" required></label><label>Ilość sztuk<input id="quantity" type="number" min="0" required></label><label>Wartość gramatury<input id="weightValue" type="number" min="0" placeholder="np. 200"></label><label>Gramatura<select id="weightUnit"><option>g</option><option>kg</option><option>ml</option><option>l</option></select></label><label>Data przyjęcia<input id="received" type="date"></label><label>Data ważności<input id="expiry" type="date"></label><label class="full">Zdjęcie produktu z telefonu<input id="photo" type="file" accept="image/*"></label></div><div class="form-actions"><button class="button ghost" value="cancel">Anuluj</button><button class="button primary" value="default">Dodaj</button></div></form></dialog><script src="warehouse.js"></script></body></html>
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Stany magazynowe | ZapoBetterWorkPlace</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="warehouse.css">
+</head>
+<body class="warehouse-body">
+  <div class="warehouse-background" aria-hidden="true"></div>
+  <header class="topbar warehouse-topbar">
+    <div class="brand warehouse-brand">
+      <img class="header-logo" src="assets/daily-fruits-logo.png" alt="Daily Fruits by BetterWorkPlace">
+      <strong class="brand-one-line">ZapoBetterWorkPlace</strong>
+    </div>
+    <div class="head-buttons">
+      <button id="download" class="small-btn">⇩ Pobierz stany</button>
+      <button id="logout" class="small-btn">Wyloguj</button>
+    </div>
+  </header>
+  <main>
+    <section class="warehouse-head">
+      <p class="eyebrow">STANY MAGAZYNOWE</p>
+      <div><h1>Stany magazynowe</h1><button id="add" class="button primary">＋ Dodaj artykuł</button></div>
+    </section>
+    <section>
+      <h2>Najkrótsze terminy ważności</h2>
+      <div class="nearest" id="nearest"></div>
+    </section>
+    <section class="browse">
+      <div class="crumb" id="crumb">Kategorie</div>
+      <button id="back" class="small-btn" hidden>← Wstecz</button>
+      <div class="tiles" id="tiles"></div>
+      <div class="products" id="products"></div>
+    </section>
+  </main>
+  <dialog id="addDialog">
+    <form id="addForm">
+      <div class="modal-head"><h2>Dodaj dostawę</h2><button type="button" id="closeAdd" class="icon-btn">×</button></div>
+      <div class="form-grid">
+        <label>Kategoria<select id="category" required></select></label>
+        <label>Firma<input id="brand" placeholder="np. Sady Wincenta"></label>
+        <label>Nazwa artykułu<input id="name" required></label>
+        <label>Ilość sztuk<input id="quantity" type="number" min="0" required></label>
+        <label>Wartość gramatury<input id="weightValue" type="number" min="0" placeholder="np. 200"></label>
+        <label>Gramatura<select id="weightUnit"><option>g</option><option>kg</option><option>ml</option><option>l</option></select></label>
+        <label>Data przyjęcia<input id="received" type="date"></label>
+        <label>Data ważności<input id="expiry" type="date"></label>
+        <label class="full">Zdjęcie produktu z telefonu<input id="photo" type="file" accept="image/*"></label>
+      </div>
+      <div class="form-actions"><button type="button" id="cancelAdd" class="button ghost">Anuluj</button><button type="submit" class="button primary">Dodaj</button></div>
+    </form>
+  </dialog>
+  <dialog id="editDialog">
+    <form id="editForm">
+      <div class="modal-head"><h2>Edytuj artykuł</h2><button type="button" id="closeEdit" class="icon-btn">×</button></div>
+      <div class="form-grid">
+        <label>Nazwa artykułu<input id="editName" required></label>
+        <label>Firma<input id="editBrand"></label>
+        <label>Kategoria<select id="editCategory" required></select></label>
+        <label>Gramatura<select id="editWeightUnit"><option>g</option><option>kg</option><option>ml</option><option>l</option></select></label>
+        <label>Wartość gramatury<input id="editWeightValue" type="number" min="0"></label>
+        <label>Data ważności<input id="editExpiry" type="date"></label>
+      </div>
+      <div class="form-actions"><button type="button" id="cancelEdit" class="button ghost">Anuluj</button><button type="submit" class="button primary">Zapisz zmiany</button></div>
+    </form>
+  </dialog>
+  <script src="warehouse.js"></script>
+</body>
+</html>

@@ -187,10 +187,10 @@ app.put('/api/products/:id', (req, res) => {
   const id = Number(req.params.id);
   const existing = productById(id);
   if (!existing) return res.status(404).json({ error: 'Nie znaleziono produktu.' });
-  const { name, category, unit, min_quantity = 0, weight_value = null, weight_unit = null, expiration_date, notes } = req.body;
+  const { name, category, brand = '', unit, min_quantity = 0, weight_value = null, weight_unit = null, expiration_date, notes } = req.body;
   if (!name || !name.trim() || !validNumber(min_quantity) || min_quantity < 0) return res.status(400).json({ error: 'Sprawdź wymagane pola.' });
-  db.prepare(`UPDATE products SET name=?, category=?, unit=?, min_quantity=?, weight_value=?, weight_unit=?, expiration_date=?, notes=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`)
-    .run(name.trim(), (category || 'Inne').trim(), (unit || 'szt.').trim(), min_quantity, validNumber(weight_value) && weight_value > 0 ? weight_value : null, weight_unit || null, parseExpiration(expiration_date), (notes || '').trim(), id);
+  db.prepare(`UPDATE products SET name=?, category=?, brand=?, unit=?, min_quantity=?, weight_value=?, weight_unit=?, expiration_date=?, notes=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`)
+    .run(name.trim(), (category || 'Inne').trim(), brand.trim(), (unit || 'szt.').trim(), min_quantity, validNumber(weight_value) && weight_value > 0 ? weight_value : null, weight_unit || null, parseExpiration(expiration_date), (notes || '').trim(), id);
   res.json(productById(id));
 });
 
@@ -225,6 +225,14 @@ app.post('/api/products/:id/movement', (req, res) => {
 
 app.get('/api/products/:id/movements', (req, res) => {
   res.json(db.prepare('SELECT * FROM movements WHERE product_id = ? ORDER BY movement_date DESC, id DESC LIMIT 30').all(Number(req.params.id)));
+});
+
+app.post('/api/products/:id/image', (req, res) => {
+  const product = productById(Number(req.params.id));
+  const image = req.body.image_data;
+  if (!product || !String(image || '').startsWith('data:image/')) return res.status(400).json({ error: 'Wybierz prawidłowe zdjęcie.' });
+  db.prepare('UPDATE products SET image_data=?, updated_at=CURRENT_TIMESTAMP WHERE id=?').run(image, product.id);
+  res.json(productById(product.id));
 });
 
 app.get('/api/products/:id/batches', (req, res) => {
