@@ -6,6 +6,11 @@
   <title>Stany magazynowe | ZapoBetterWorkPlace</title>
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="warehouse.css">
+  <style>
+    .tile .path-edit,.tile .image-edit{opacity:0;pointer-events:none;transition:opacity .18s ease}
+    .tile:hover .path-edit,.tile:hover .image-edit,.tile:focus-within .path-edit,.tile:focus-within .image-edit{opacity:1;pointer-events:auto}
+    @media (hover:none){.tile .path-edit,.tile .image-edit{opacity:1;pointer-events:auto}}
+  </style>
 </head>
 <body class="warehouse-body">
   <div class="warehouse-background" aria-hidden="true"></div>
@@ -102,6 +107,8 @@
     new MutationObserver(() => document.querySelectorAll('.nearest-card').forEach(card => {
       card.style.cursor = 'pointer'; card.title = 'Otwórz produkt';
     })).observe(document.querySelector('#nearest'), { childList: true });
+    const previousOpenPath = openPath;
+    openPath = value => { previousOpenPath(value); document.querySelector('#pathTitle').textContent = 'Zmień nazwę'; };
     document.addEventListener('click', event => {
       const card = event.target.closest('.nearest-card');
       if (!card) return;
@@ -159,6 +166,8 @@
       edit.textContent = 'Edytuj';
       const button = document.createElement('button'); button.className = 'small-btn';
       button.dataset.productMove = edit.dataset.edit; button.textContent = 'Przenieś'; actions.append(button);
+      const remove = document.createElement('button'); remove.className = 'small-btn';
+      remove.dataset.productDelete = edit.dataset.edit; remove.textContent = 'Usuń'; actions.append(remove);
     }));
     productActions.observe(document.querySelector('#products'), { childList: true, subtree: true });
     const options = (select, values) => select.innerHTML = values.map(value => `<option>${esc(value)}</option>`).join('');
@@ -177,6 +186,14 @@
       updateMoveBrands(); document.querySelector('#moveProductBrand').value = brand(productToMove);
       updateMoveWeights(); document.querySelector('#moveProductWeight').value = size(productToMove);
       document.querySelector('#productMoveDialog').showModal();
+    }, true);
+    document.addEventListener('click', async event => {
+      const button = event.target.closest('[data-product-delete]'); if (!button) return;
+      event.preventDefault(); event.stopImmediatePropagation();
+      const product = all.find(item => item.id === Number(button.dataset.productDelete));
+      if (!product || !confirm(`Usunąć artykuł „${product.name}” wraz z jego stanem?`)) return;
+      try { await api(`/api/products/${product.id}`, { method: 'DELETE' }); await load(); }
+      catch (error) { alert(error.message); }
     }, true);
     for (const id of ['cancelProductMove', 'closeProductMove']) document.querySelector('#' + id).onclick = () => document.querySelector('#productMoveDialog').close();
     document.querySelector('#productMoveForm').onsubmit = async event => {
