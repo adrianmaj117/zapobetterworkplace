@@ -86,5 +86,21 @@
     </form>
   </dialog>
   <script src="warehouse.js"></script>
+  <script>
+    new MutationObserver(() => document.querySelectorAll('.nearest-card').forEach(card => {
+      card.style.cursor = 'pointer'; card.title = 'Otwórz produkt';
+    })).observe(document.querySelector('#nearest'), { childList: true });
+    document.addEventListener('click', event => {
+      const card = event.target.closest('.nearest-card');
+      if (!card) return;
+      const index = [...document.querySelector('#nearest').children].indexOf(card);
+      const product = all.filter(item => item.expiration_date)
+        .sort((a, b) => a.expiration_date.localeCompare(b.expiration_date))[index];
+      if (!product) return;
+      state = { level: 'products', category: product.category, brand: brand(product), weight: size(product) };
+      render();
+      document.querySelector('.browse').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  </script>
 </body>
 </html>
