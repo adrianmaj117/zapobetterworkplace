@@ -10,10 +10,10 @@
 <body class="warehouse-body">
   <div class="warehouse-background" aria-hidden="true"></div>
   <header class="topbar warehouse-topbar">
-    <div class="brand warehouse-brand">
+    <button type="button" id="home" class="brand warehouse-brand brand-home" title="Wróć do menu głównego">
       <img class="header-logo" src="assets/daily-fruits-logo.png" alt="Daily Fruits by BetterWorkPlace">
       <strong class="brand-one-line">ZapoBetterWorkPlace</strong>
-    </div>
+    </button>
     <div class="head-buttons">
       <button id="download" class="small-btn">⇩ Pobierz stany</button>
       <button id="logout" class="small-btn">Wyloguj</button>
@@ -67,6 +67,14 @@
         <label>Data ważności<input id="editExpiry" type="date"></label>
       </div>
       <div class="form-actions"><button type="button" id="cancelEdit" class="button ghost">Anuluj</button><button type="submit" class="button primary">Zapisz zmiany</button></div>
+    </form>
+  </dialog>
+  <dialog id="pathDialog">
+    <form id="pathForm">
+      <div class="modal-head"><h2 id="pathTitle">Edytuj ścieżkę</h2><button type="button" id="closePath" class="icon-btn">×</button></div>
+      <label id="pathLabel">Nazwa<input id="pathValue" required></label>
+      <p class="path-help">Zmiana obejmie wszystkie artykuły widoczne w tej gałęzi.</p>
+      <div class="form-actions"><button type="button" id="cancelPath" class="button ghost">Anuluj</button><button type="submit" class="button primary">Zapisz</button></div>
     </form>
   </dialog>
   <script src="warehouse.js"></script>
