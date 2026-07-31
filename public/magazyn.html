@@ -220,6 +220,25 @@
         document.querySelector('#productMoveDialog').close(); await load();
       } catch (error) { alert(error.message); }
     };
+    const tileDeleteObserver = new MutationObserver(() => document.querySelectorAll('#tiles .tile[data-value]').forEach(tile => {
+      if (tile.querySelector('[data-delete-path]')) return;
+      const value = tile.dataset.value;
+      const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'path-edit';
+      remove.dataset.deletePath = value; remove.title = 'Usuń kafelek'; remove.textContent = '🗑';
+      remove.style.right = '124px'; tile.append(remove);
+    }));
+    tileDeleteObserver.observe(document.querySelector('#tiles'), { childList: true, subtree: true });
+    document.addEventListener('click', async event => {
+      const button = event.target.closest('[data-delete-path]'); if (!button) return;
+      event.preventDefault(); event.stopImmediatePropagation();
+      const password = prompt('Wpisz hasło, aby usunąć kafelek i jego produkty:');
+      if (password !== '123') return alert('Nieprawidłowe hasło.');
+      if (!confirm(`Usunąć kafelek „${button.dataset.deletePath}” oraz wszystkie produkty w tej gałęzi?`)) return;
+      try {
+        await api('/api/paths', { method:'DELETE', body:JSON.stringify({ ...pathData(button.dataset.deletePath), password }) });
+        savedPaths = await api('/api/paths'); state = { level:'category' }; await load();
+      } catch (error) { alert(error.message); }
+    }, true);
     const previousOpenMove = openMove;
     openMove = value => {
       moveEdit = pathData(value);

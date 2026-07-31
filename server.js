@@ -224,6 +224,27 @@ app.post('/api/paths', (req, res) => {
   db.prepare('INSERT OR IGNORE INTO inventory_paths (level, category, brand, weight_value, weight_unit) VALUES (?, ?, ?, ?, ?)').run(row.level, row.category, row.brand, row.weight_value, row.weight_unit);
   res.status(201).json(row);
 });
+app.delete('/api/paths', (req, res) => {
+  const { level, category = '', brand = '', weight_value = null, weight_unit = '', password = '' } = req.body;
+  if (password !== '123') return res.status(403).json({ error: 'Nieprawidłowe hasło.' });
+  const sourceBrand = brand === 'Pozostałe' ? '' : brand;
+  let where = '', params = [], imageFilter = '', imageParams = [];
+  if (level === 'category') { where = 'category=?'; params = [category]; imageFilter = 'category=? OR category LIKE ? OR category LIKE ?'; imageParams = [`category:${category}`, `brand:${category}:%`, `weight:${category}:%`]; }
+  else if (level === 'brand') { where = "category=? AND (COALESCE(brand,'')=COALESCE(?, '') OR (?='' AND brand='Pozostałe'))"; params = [category, sourceBrand, sourceBrand]; imageFilter = 'category=? OR category LIKE ?'; imageParams = [`brand:${category}:${brand}`, `weight:${category}:${brand}:%`]; }
+  else if (level === 'weight') { where = "category=? AND (COALESCE(brand,'')=COALESCE(?, '') OR (?='' AND brand='Pozostałe')) AND COALESCE(weight_value,-1)=COALESCE(?,-1) AND COALESCE(weight_unit,'')=COALESCE(?, '')"; params = [category, sourceBrand, sourceBrand, weight_value, weight_unit]; imageFilter = 'category=?'; imageParams = [`weight:${category}:${brand}:${weight_value} ${weight_unit}`]; }
+  else return res.status(400).json({ error: 'Nieznany poziom ścieżki.' });
+  db.exec('BEGIN');
+  try {
+    db.prepare(`DELETE FROM movements WHERE product_id IN (SELECT id FROM products WHERE ${where})`).run(...params);
+    db.prepare(`DELETE FROM product_batches WHERE product_id IN (SELECT id FROM products WHERE ${where})`).run(...params);
+    const result = db.prepare(`DELETE FROM products WHERE ${where}`).run(...params);
+    if (level === 'category') db.prepare('DELETE FROM inventory_paths WHERE category=?').run(category);
+    else if (level === 'brand') db.prepare('DELETE FROM inventory_paths WHERE category=? AND brand=?').run(category, brand);
+    else db.prepare('DELETE FROM inventory_paths WHERE level=? AND category=? AND brand=? AND weight_value=? AND weight_unit=?').run('weight', category, brand, weight_value, weight_unit);
+    db.prepare(`DELETE FROM category_images WHERE ${imageFilter}`).run(...imageParams);
+    db.exec('COMMIT'); res.json({ deleted: result.changes });
+  } catch (error) { db.exec('ROLLBACK'); throw error; }
+});
 app.post('/api/category-images', (req, res) => {
   const { category, image_data } = req.body;
   if (!category || !String(image_data || '').startsWith('data:image/')) return res.status(400).json({ error: 'Wybierz prawidłowe zdjęcie.' });
