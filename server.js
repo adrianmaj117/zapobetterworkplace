@@ -65,6 +65,22 @@ db.exec(`CREATE TABLE IF NOT EXISTS app_settings (
   value TEXT NOT NULL,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 )`);
+db.exec(`
+  CREATE TABLE IF NOT EXISTS demand_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_name TEXT DEFAULT '',
+    recognized_text TEXT DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE TABLE IF NOT EXISTS demand_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    demand_run_id INTEGER NOT NULL,
+    product_id INTEGER NOT NULL,
+    quantity REAL NOT NULL CHECK(quantity > 0),
+    FOREIGN KEY(demand_run_id) REFERENCES demand_runs(id) ON DELETE CASCADE,
+    FOREIGN KEY(product_id) REFERENCES products(id) ON DELETE CASCADE
+  );
+`);
 
 function syncBundledInventory() {
   if (dbPath === bundledDbPath || !fs.existsSync(bundledDbPath)) return 0;
@@ -412,6 +428,37 @@ app.post('/api/products/:id/movement', (req, res) => {
     throw error;
   }
   res.json(productById(id));
+});
+
+// Zapotrzebowanie jest odjmowane wyłącznie po ręcznym zatwierdzeniu listy.
+app.post('/api/demand/apply', (req, res) => {
+  const { password = '', source_name = '', recognized_text = '' } = req.body || {};
+  if (password !== '123') return res.status(403).json({ error: 'Nieprawidłowe hasło zatwierdzające.' });
+  const quantities = new Map();
+  for (const item of (Array.isArray(req.body?.items) ? req.body.items : [])) {
+    const id = Number(item.product_id), quantity = Number(item.quantity);
+    if (Number.isInteger(id) && Number.isFinite(quantity) && quantity > 0) quantities.set(id, (quantities.get(id) || 0) + quantity);
+  }
+  if (!quantities.size) return res.status(400).json({ error: 'Dodaj przynajmniej jeden produkt z ilością większą od zera.' });
+  const ids = [...quantities.keys()], marks = ids.map(() => '?').join(',');
+  const products = db.prepare(`SELECT * FROM products WHERE id IN (${marks})`).all(...ids);
+  if (products.length !== ids.length) return res.status(400).json({ error: 'Jeden z wybranych produktów już nie istnieje.' });
+  for (const product of products) if (product.quantity < quantities.get(product.id)) return res.status(400).json({ error: `Za mało produktu „${product.name}”. Dostępne: ${product.quantity} ${product.unit}.` });
+  db.exec('BEGIN');
+  try {
+    const run = db.prepare('INSERT INTO demand_runs (source_name, recognized_text) VALUES (?, ?)').run(String(source_name).slice(0, 255), String(recognized_text).slice(0, 50000));
+    const update = db.prepare('UPDATE products SET quantity=quantity-?, updated_at=CURRENT_TIMESTAMP WHERE id=?');
+    const movement = db.prepare("INSERT INTO movements (product_id, type, quantity, note) VALUES (?, 'demand', ?, ?)");
+    const addItem = db.prepare('INSERT INTO demand_items (demand_run_id, product_id, quantity) VALUES (?, ?, ?)');
+    for (const product of products) {
+      const quantity = quantities.get(product.id);
+      update.run(quantity, product.id);
+      movement.run(product.id, quantity, `Zapotrzebowanie ze zdjęcia${source_name ? `: ${String(source_name).slice(0, 120)}` : ''}`);
+      addItem.run(run.lastInsertRowid, product.id, quantity);
+    }
+    db.exec('COMMIT');
+    res.json({ applied: products.length, demand_id: Number(run.lastInsertRowid) });
+  } catch (error) { db.exec('ROLLBACK'); throw error; }
 });
 
 app.get('/api/products/:id/movements', (req, res) => {

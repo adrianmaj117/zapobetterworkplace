@@ -27,7 +27,7 @@
   <main>
     <section class="warehouse-head">
       <p class="eyebrow">STANY MAGAZYNOWE</p>
-      <div><h1>Stany magazynowe</h1><button id="add" class="button primary">＋ Dodaj artykuł</button></div>
+      <div><h1>Stany magazynowe</h1><div class="warehouse-actions"><button id="demand" class="button ghost demand-button">▣ Zapotrzebowanie ze zdjęcia</button><button id="add" class="button primary">＋ Dodaj artykuł</button></div></div>
     </section>
     <section>
       <h2>Najkrótsze terminy ważności</h2>
@@ -104,6 +104,21 @@
       </div>
       <p class="path-help">Produkt zostanie przeniesiony do wybranej ścieżki: kategoria → firma → gramatura.</p>
       <div class="form-actions"><button type="button" id="cancelProductMove" class="button ghost">Anuluj</button><button type="submit" class="button primary">Przenieś produkt</button></div>
+    </form>
+  </dialog>
+  <dialog id="demandDialog" class="demand-dialog">
+    <form id="demandForm">
+      <div class="modal-head"><h2>Zapotrzebowanie ze zdjęcia</h2><button type="button" id="closeDemand" class="icon-btn">×</button></div>
+      <p class="demand-intro">Dodaj wyraźne zdjęcie listy. Strona odczyta tekst, a Ty sprawdzisz produkty i ilości przed odjęciem stanów.</p>
+      <label class="demand-upload">Zdjęcie zapotrzebowania<input id="demandImage" type="file" accept="image/*" capture="environment"></label>
+      <div id="demandStatus" class="demand-status" aria-live="polite">Wybierz zdjęcie, aby rozpocząć.</div>
+      <div id="demandPreview" class="demand-preview" hidden>
+        <div class="demand-preview-head"><strong>Rozpoznane pozycje</strong><button type="button" id="addDemandRow" class="small-btn">＋ Dodaj pozycję</button></div>
+        <div id="demandRows"></div>
+        <details class="recognized-text"><summary>Pokaż odczytany tekst</summary><pre id="recognizedText"></pre></details>
+        <label>Hasło zatwierdzające<input id="demandPassword" type="password" inputmode="numeric" placeholder="Wpisz hasło"></label>
+      </div>
+      <div class="form-actions"><button type="button" id="cancelDemand" class="button ghost">Anuluj</button><button id="applyDemand" type="submit" class="button primary" disabled>Zatwierdź i odejmij</button></div>
     </form>
   </dialog>
   <script src="warehouse.js"></script>
@@ -328,5 +343,7 @@
       } catch (error) { alert(error.message); }
     };
   </script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js" defer></script>
+  <script src="demand.js" defer></script>
 </body>
 </html>
