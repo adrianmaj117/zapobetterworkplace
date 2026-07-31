@@ -7,6 +7,7 @@
   const rows = document.querySelector('#demandRows');
   const apply = document.querySelector('#applyDemand');
   let recognizedText = '';
+  const localDate = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 
   const normalize = value => String(value || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
   const label = item => `${item.name} — ${brand(item)} · ${size(item)} (stan: ${item.quantity} ${item.unit})`;
@@ -48,7 +49,7 @@
       recognizedText = result.data.text || ''; buildPreview(recognizedText);
     } catch (error) { console.error(error); recognizedText = ''; preview.hidden = false; addRow(); apply.disabled = false; status.textContent = 'Nie udało się odczytać zdjęcia. Dodaj pozycje ręcznie lub wybierz wyraźniejsze zdjęcie.'; }
   }
-  document.querySelector('#demand').addEventListener('click', () => { dialog.showModal(); status.textContent = 'Wybierz zdjęcie, aby rozpocząć.'; preview.hidden = true; rows.innerHTML = ''; recognizedText = ''; fileInput.value = ''; });
+  document.querySelector('#demand').addEventListener('click', () => { dialog.showModal(); status.textContent = 'Wybierz zdjęcie, aby rozpocząć.'; preview.hidden = true; rows.innerHTML = ''; recognizedText = ''; fileInput.value = ''; document.querySelector('#demandDate').value = localDate(); document.querySelector('#demandPassword').value = ''; });
   ['closeDemand','cancelDemand'].forEach(id => document.querySelector(`#${id}`).addEventListener('click', () => dialog.close()));
   fileInput.addEventListener('change', () => recognize(fileInput.files[0]));
   document.querySelector('#addDemandRow').addEventListener('click', () => addRow());
@@ -61,7 +62,7 @@
     if (!confirm(`Odjąć ze stanów ${items.length} ${items.length === 1 ? 'pozycję' : 'pozycje'}?`)) return;
     apply.disabled = true;
     try {
-      const result = await api('/api/demand/apply', { method:'POST', body:JSON.stringify({ items, password, source_name:fileInput.files[0]?.name || 'zdjęcie zapotrzebowania', recognized_text:recognizedText }) });
+      const result = await api('/api/demand/apply', { method:'POST', body:JSON.stringify({ items, password, demand_date:document.querySelector('#demandDate').value, source_name:fileInput.files[0]?.name || 'zdjęcie zapotrzebowania', recognized_text:recognizedText }) });
       dialog.close(); alert(`Zapotrzebowanie zatwierdzone. Odjęto ${result.applied} ${result.applied === 1 ? 'produkt' : 'produkty'}.`); await load();
     } catch (error) { alert(error.message); } finally { apply.disabled = false; }
   });

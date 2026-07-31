@@ -47,6 +47,17 @@ db.exec(`
     FOREIGN KEY(product_id) REFERENCES products(id) ON DELETE CASCADE
   );
 `);
+if (!db.prepare('PRAGMA table_info(demand_runs)').all().some(column => column.name === 'demand_date')) db.exec('ALTER TABLE demand_runs ADD COLUMN demand_date TEXT');
+if (!db.prepare('PRAGMA table_info(demand_runs)').all().some(column => column.name === 'reversed_at')) db.exec('ALTER TABLE demand_runs ADD COLUMN reversed_at TEXT');
+if (!db.prepare('PRAGMA table_info(demand_items)').all().some(column => column.name === 'corrected_quantity')) db.exec('ALTER TABLE demand_items ADD COLUMN corrected_quantity REAL NOT NULL DEFAULT 0');
+db.exec(`CREATE TABLE IF NOT EXISTS demand_day_products (
+  demand_date TEXT NOT NULL,
+  product_id INTEGER NOT NULL,
+  opening_quantity REAL NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY(demand_date, product_id),
+  FOREIGN KEY(product_id) REFERENCES products(id) ON DELETE CASCADE
+)`);
 if (!db.prepare("PRAGMA table_info(products)").all().some(column => column.name === 'weight_grams')) {
   db.exec('ALTER TABLE products ADD COLUMN weight_grams REAL');
 }
@@ -432,8 +443,9 @@ app.post('/api/products/:id/movement', (req, res) => {
 
 // Zapotrzebowanie jest odjmowane wyłącznie po ręcznym zatwierdzeniu listy.
 app.post('/api/demand/apply', (req, res) => {
-  const { password = '', source_name = '', recognized_text = '' } = req.body || {};
+  const { password = '', source_name = '', recognized_text = '', demand_date = '' } = req.body || {};
   if (password !== '123') return res.status(403).json({ error: 'Nieprawidłowe hasło zatwierdzające.' });
+  const demandDate = /^\d{4}-\d{2}-\d{2}$/.test(String(demand_date)) ? demand_date : new Date().toISOString().slice(0, 10);
   const quantities = new Map();
   for (const item of (Array.isArray(req.body?.items) ? req.body.items : [])) {
     const id = Number(item.product_id), quantity = Number(item.quantity);
@@ -446,18 +458,85 @@ app.post('/api/demand/apply', (req, res) => {
   for (const product of products) if (product.quantity < quantities.get(product.id)) return res.status(400).json({ error: `Za mało produktu „${product.name}”. Dostępne: ${product.quantity} ${product.unit}.` });
   db.exec('BEGIN');
   try {
-    const run = db.prepare('INSERT INTO demand_runs (source_name, recognized_text) VALUES (?, ?)').run(String(source_name).slice(0, 255), String(recognized_text).slice(0, 50000));
+    const run = db.prepare('INSERT INTO demand_runs (source_name, recognized_text, demand_date) VALUES (?, ?, ?)').run(String(source_name).slice(0, 255), String(recognized_text).slice(0, 50000), demandDate);
     const update = db.prepare('UPDATE products SET quantity=quantity-?, updated_at=CURRENT_TIMESTAMP WHERE id=?');
     const movement = db.prepare("INSERT INTO movements (product_id, type, quantity, note) VALUES (?, 'demand', ?, ?)");
     const addItem = db.prepare('INSERT INTO demand_items (demand_run_id, product_id, quantity) VALUES (?, ?, ?)');
+    const snapshot = db.prepare('INSERT OR IGNORE INTO demand_day_products (demand_date, product_id, opening_quantity) VALUES (?, ?, ?)');
     for (const product of products) {
       const quantity = quantities.get(product.id);
+      snapshot.run(demandDate, product.id, product.quantity);
       update.run(quantity, product.id);
       movement.run(product.id, quantity, `Zapotrzebowanie ze zdjęcia${source_name ? `: ${String(source_name).slice(0, 120)}` : ''}`);
       addItem.run(run.lastInsertRowid, product.id, quantity);
     }
     db.exec('COMMIT');
     res.json({ applied: products.length, demand_id: Number(run.lastInsertRowid) });
+  } catch (error) { db.exec('ROLLBACK'); throw error; }
+});
+
+function validDemandDate(value) { return /^\d{4}-\d{2}-\d{2}$/.test(String(value || '')); }
+function getDemandItems(runId) {
+  return db.prepare(`SELECT di.id, di.product_id, di.quantity, COALESCE(di.corrected_quantity, 0) AS corrected_quantity,
+    p.name, p.brand, p.category, p.unit, p.quantity AS current_quantity, p.weight_value, p.weight_unit,
+    dp.opening_quantity
+    FROM demand_items di
+    JOIN products p ON p.id=di.product_id
+    LEFT JOIN demand_runs dr ON dr.id=di.demand_run_id
+    LEFT JOIN demand_day_products dp ON dp.product_id=di.product_id AND dp.demand_date=dr.demand_date
+    WHERE di.demand_run_id=? ORDER BY p.name COLLATE NOCASE`).all(runId);
+}
+app.get('/api/demand/daily', (req, res) => {
+  const demandDate = validDemandDate(req.query.date) ? req.query.date : new Date().toISOString().slice(0, 10);
+  const runs = db.prepare("SELECT id, source_name, demand_date, created_at, reversed_at FROM demand_runs WHERE COALESCE(demand_date, date(created_at))=? ORDER BY id DESC").all(demandDate);
+  const withItems = runs.map(run => ({ ...run, items: getDemandItems(run.id) }));
+  const summary = new Map();
+  withItems.forEach(run => run.items.forEach(item => {
+    const record = summary.get(item.product_id) || { product_id:item.product_id, name:item.name, unit:item.unit, opening_quantity:item.opening_quantity, demanded:0, corrected:0, current_quantity:item.current_quantity };
+    record.demanded += item.quantity; record.corrected += item.corrected_quantity; summary.set(item.product_id, record);
+  }));
+  res.json({ date:demandDate, runs:withItems, summary:[...summary.values()].sort((a,b) => a.name.localeCompare(b.name, 'pl')) });
+});
+app.post('/api/demand/runs/:id/correct', (req, res) => {
+  const runId = Number(req.params.id);
+  if (req.body?.password !== '123') return res.status(403).json({ error: 'Nieprawidłowe hasło zatwierdzające.' });
+  const run = db.prepare('SELECT id, demand_date FROM demand_runs WHERE id=?').get(runId);
+  if (!run) return res.status(404).json({ error: 'Nie znaleziono tego zapotrzebowania.' });
+  const requested = new Map();
+  for (const entry of (Array.isArray(req.body?.items) ? req.body.items : [])) {
+    const productId = Number(entry.product_id), quantity = Number(entry.quantity);
+    if (Number.isInteger(productId) && Number.isFinite(quantity) && quantity > 0) requested.set(productId, (requested.get(productId) || 0) + quantity);
+  }
+  if (!requested.size) return res.status(400).json({ error: 'Podaj ilość do przywrócenia.' });
+  const items = getDemandItems(runId); const byProduct = new Map(items.map(item => [item.product_id, item]));
+  for (const [productId, quantity] of requested) {
+    const item = byProduct.get(productId);
+    if (!item || quantity > item.quantity - item.corrected_quantity) return res.status(400).json({ error: 'Nie można przywrócić większej ilości niż odjęto w tym zapotrzebowaniu.' });
+  }
+  db.exec('BEGIN');
+  try {
+    const restore = db.prepare('UPDATE products SET quantity=quantity+?, updated_at=CURRENT_TIMESTAMP WHERE id=?');
+    const correction = db.prepare('UPDATE demand_items SET corrected_quantity=corrected_quantity+? WHERE demand_run_id=? AND product_id=?');
+    const movement = db.prepare("INSERT INTO movements (product_id, type, quantity, note) VALUES (?, 'add', ?, ?)");
+    for (const [productId, quantity] of requested) { restore.run(quantity, productId); correction.run(quantity, runId, productId); movement.run(productId, quantity, `Korekta zapotrzebowania #${runId}`); }
+    db.exec('COMMIT'); res.json({ corrected: requested.size });
+  } catch (error) { db.exec('ROLLBACK'); throw error; }
+});
+app.post('/api/demand/runs/:id/reverse', (req, res) => {
+  const runId = Number(req.params.id);
+  if (req.body?.password !== '123') return res.status(403).json({ error: 'Nieprawidłowe hasło zatwierdzające.' });
+  const run = db.prepare('SELECT id FROM demand_runs WHERE id=?').get(runId);
+  if (!run) return res.status(404).json({ error: 'Nie znaleziono tego zapotrzebowania.' });
+  const items = getDemandItems(runId).map(item => ({ ...item, restore:item.quantity-item.corrected_quantity })).filter(item => item.restore > 0);
+  if (!items.length) return res.status(400).json({ error: 'To zapotrzebowanie zostało już w całości cofnięte.' });
+  db.exec('BEGIN');
+  try {
+    const restore = db.prepare('UPDATE products SET quantity=quantity+?, updated_at=CURRENT_TIMESTAMP WHERE id=?');
+    const correction = db.prepare('UPDATE demand_items SET corrected_quantity=quantity WHERE demand_run_id=? AND product_id=?');
+    const movement = db.prepare("INSERT INTO movements (product_id, type, quantity, note) VALUES (?, 'add', ?, ?)");
+    items.forEach(item => { restore.run(item.restore, item.product_id); correction.run(runId, item.product_id); movement.run(item.product_id, item.restore, `Cofnięcie zapotrzebowania #${runId}`); });
+    db.prepare('UPDATE demand_runs SET reversed_at=CURRENT_TIMESTAMP WHERE id=?').run(runId);
+    db.exec('COMMIT'); res.json({ reversed:items.length });
   } catch (error) { db.exec('ROLLBACK'); throw error; }
 });
 

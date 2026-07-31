@@ -20,6 +20,7 @@
       <strong class="brand-one-line">ZapoBetterWorkPlace</strong>
     </button>
     <div class="head-buttons">
+      <button id="demandHistory" class="small-btn">▤ Historia dnia</button>
       <button id="download" class="small-btn">⇩ Pobierz stany</button>
       <button id="logout" class="small-btn">Wyloguj</button>
     </div>
@@ -111,6 +112,7 @@
       <div class="modal-head"><h2>Zapotrzebowanie ze zdjęcia</h2><button type="button" id="closeDemand" class="icon-btn">×</button></div>
       <p class="demand-intro">Dodaj wyraźne zdjęcie listy. Strona odczyta tekst, a Ty sprawdzisz produkty i ilości przed odjęciem stanów.</p>
       <label class="demand-upload">Zdjęcie zapotrzebowania<input id="demandImage" type="file" accept="image/*" capture="environment"></label>
+      <label>Data zapotrzebowania<input id="demandDate" type="date" required></label>
       <div id="demandStatus" class="demand-status" aria-live="polite">Wybierz zdjęcie, aby rozpocząć.</div>
       <div id="demandPreview" class="demand-preview" hidden>
         <div class="demand-preview-head"><strong>Rozpoznane pozycje</strong><button type="button" id="addDemandRow" class="small-btn">＋ Dodaj pozycję</button></div>
@@ -119,6 +121,16 @@
         <label>Hasło zatwierdzające<input id="demandPassword" type="password" inputmode="numeric" placeholder="Wpisz hasło"></label>
       </div>
       <div class="form-actions"><button type="button" id="cancelDemand" class="button ghost">Anuluj</button><button id="applyDemand" type="submit" class="button primary" disabled>Zatwierdź i odejmij</button></div>
+    </form>
+  </dialog>
+  <dialog id="demandHistoryDialog" class="demand-dialog history-dialog">
+    <form method="dialog">
+      <div class="modal-head"><h2>Podsumowanie dnia</h2><button type="button" id="closeDemandHistory" class="icon-btn">×</button></div>
+      <div class="history-controls"><label>Wybierz dzień<input id="historyDate" type="date"></label><button type="button" id="refreshDemandHistory" class="small-btn">Pokaż dzień</button></div>
+      <p class="demand-intro">Stan początkowy oznacza stan przed pierwszym zapotrzebowaniem tego dnia. Możesz przywrócić część ilości albo cofnąć całe zapotrzebowanie, np. gdy firma zrezygnuje.</p>
+      <div id="dailySummary" class="daily-summary"></div>
+      <div id="dailyRuns" class="daily-runs"></div>
+      <div class="form-actions"><button type="button" id="closeDemandHistoryBottom" class="button ghost">Zamknij</button></div>
     </form>
   </dialog>
   <script src="warehouse.js"></script>
@@ -345,5 +357,6 @@
   </script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js" defer></script>
   <script src="demand.js" defer></script>
+  <script src="history.js" defer></script>
 </body>
 </html>
