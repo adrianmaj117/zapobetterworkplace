@@ -200,19 +200,20 @@ app.post('/api/category-images', (req, res) => {
 app.patch('/api/paths/rename', (req, res) => {
   const { level, category = '', brand = '', weight_value = null, weight_unit = '', value = '' } = req.body;
   const next = String(value).trim();
+  const sourceBrand = brand === 'Pozostałe' ? '' : brand;
   if (!next) return res.status(400).json({ error: 'Podaj nową nazwę.' });
   let result;
   if (level === 'category') {
     result = db.prepare('UPDATE products SET category=?, updated_at=CURRENT_TIMESTAMP WHERE category=?').run(next, category);
     db.prepare("UPDATE category_images SET category=? WHERE category=?").run(`category:${next}`, `category:${category}`);
   } else if (level === 'brand') {
-    result = db.prepare("UPDATE products SET brand=?, updated_at=CURRENT_TIMESTAMP WHERE category=? AND COALESCE(brand,'')=COALESCE(?, '')").run(next, category, brand);
+    result = db.prepare("UPDATE products SET brand=?, updated_at=CURRENT_TIMESTAMP WHERE category=? AND COALESCE(brand,'')=COALESCE(?, '')").run(next, category, sourceBrand);
     db.prepare("UPDATE category_images SET category=? WHERE category=?").run(`brand:${category}:${next}`, `brand:${category}:${brand}`);
   } else if (level === 'weight') {
     const match = next.match(/^(\d+(?:[.,]\d+)?)\s*(g|kg|ml|l)$/i);
     if (!match) return res.status(400).json({ error: 'Wpisz gramaturę np. 200 ml lub 1 kg.' });
     const nextValue = Number(match[1].replace(',', '.')), nextUnit = match[2].toLowerCase();
-    result = db.prepare("UPDATE products SET weight_value=?, weight_unit=?, updated_at=CURRENT_TIMESTAMP WHERE category=? AND COALESCE(brand,'')=COALESCE(?, '') AND COALESCE(weight_value,-1)=COALESCE(?,-1) AND COALESCE(weight_unit,'')=COALESCE(?, '')").run(nextValue, nextUnit, category, brand, weight_value, weight_unit);
+    result = db.prepare("UPDATE products SET weight_value=?, weight_unit=?, updated_at=CURRENT_TIMESTAMP WHERE category=? AND COALESCE(brand,'')=COALESCE(?, '') AND COALESCE(weight_value,-1)=COALESCE(?,-1) AND COALESCE(weight_unit,'')=COALESCE(?, '')").run(nextValue, nextUnit, category, sourceBrand, weight_value, weight_unit);
     db.prepare("UPDATE category_images SET category=? WHERE category=?").run(`weight:${category}:${brand}:${nextValue} ${nextUnit}`, `weight:${category}:${brand}:${weight_value} ${weight_unit}`);
   } else return res.status(400).json({ error: 'Nieznany poziom ścieżki.' });
   res.json({ changed: result.changes });
