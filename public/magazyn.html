@@ -117,7 +117,12 @@
     <form id="demandForm">
       <div class="modal-head"><h2>Zapotrzebowanie ze zdjęcia</h2><button type="button" id="closeDemand" class="icon-btn">×</button></div>
       <p class="demand-intro">Dodaj wyraźne zdjęcie listy. Strona odczyta tekst, a Ty sprawdzisz produkty i ilości przed odjęciem stanów.</p>
-      <label class="demand-upload">Zdjęcia zapotrzebowania (możesz wybrać kilka)<input id="demandImage" type="file" accept="image/*" multiple></label>
+      <div class="demand-image-slots">
+        <label class="demand-upload">Zdjęcie 1<input class="demand-image" type="file" accept="image/*" capture="environment"></label>
+        <label class="demand-upload">Zdjęcie 2 <small>(opcjonalne)</small><input class="demand-image" type="file" accept="image/*" capture="environment"></label>
+        <label class="demand-upload">Zdjęcie 3 <small>(opcjonalne)</small><input class="demand-image" type="file" accept="image/*" capture="environment"></label>
+        <label class="demand-upload">Zdjęcie 4 <small>(opcjonalne)</small><input class="demand-image" type="file" accept="image/*" capture="environment"></label>
+      </div>
       <label>Data zapotrzebowania<input id="demandDate" type="date" required></label>
       <div id="demandStatus" class="demand-status" aria-live="polite">Wybierz zdjęcie, aby rozpocząć.</div>
       <div id="demandPreview" class="demand-preview" hidden>
