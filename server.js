@@ -384,10 +384,12 @@ app.post('/api/products/bulk-delete', (req, res) => {
 app.post('/api/products/bulk-move', (req, res) => {
   const ids = [...new Set((Array.isArray(req.body.ids) ? req.body.ids : []).map(Number).filter(Number.isInteger))];
   const { category = '', brand = '', weight_value = null, weight_unit = '' } = req.body;
-  if (!ids.length || !category || !brand || !Number.isFinite(Number(weight_value)) || !weight_unit) return res.status(400).json({ error: 'Wybierz pełną ścieżkę docelową.' });
+  if (!ids.length || !category || !brand) return res.status(400).json({ error: 'Wybierz kategorię i firmę docelową.' });
   const marks = ids.map(() => '?').join(',');
-  const result = db.prepare(`UPDATE products SET category=?, brand=?, weight_value=?, weight_unit=?, updated_at=CURRENT_TIMESTAMP WHERE id IN (${marks})`)
-    .run(category, brand === 'Pozostałe' ? '' : brand, Number(weight_value), weight_unit, ...ids);
+  const hasWeight = Number.isFinite(Number(weight_value)) && weight_unit;
+  const result = hasWeight
+    ? db.prepare(`UPDATE products SET category=?, brand=?, weight_value=?, weight_unit=?, updated_at=CURRENT_TIMESTAMP WHERE id IN (${marks})`).run(category, brand === 'Pozostałe' ? '' : brand, Number(weight_value), weight_unit, ...ids)
+    : db.prepare(`UPDATE products SET category=?, brand=?, updated_at=CURRENT_TIMESTAMP WHERE id IN (${marks})`).run(category, brand === 'Pozostałe' ? '' : brand, ...ids);
   res.json({ moved: result.changes });
 });
 

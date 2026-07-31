@@ -98,9 +98,9 @@
     <form id="productMoveForm">
       <div class="modal-head"><h2>Przenieś produkt</h2><button type="button" id="closeProductMove" class="icon-btn">×</button></div>
       <div class="form-grid">
-        <label>Kategoria<select id="moveProductCategory" required></select></label>
-        <label>Firma<select id="moveProductBrand" required></select></label>
-        <label>Gramatura<select id="moveProductWeight" required></select></label>
+        <label>Kategoria<select id="moveProductCategory"></select></label>
+        <label>Firma<select id="moveProductBrand"></select></label>
+        <label>Gramatura<select id="moveProductWeight"></select></label>
       </div>
       <p class="path-help">Produkt zostanie przeniesiony do wybranej ścieżki: kategoria → firma → gramatura.</p>
       <div class="form-actions"><button type="button" id="cancelProductMove" class="button ghost">Anuluj</button><button type="submit" class="button primary">Przenieś produkt</button></div>
@@ -306,6 +306,24 @@
         const category = document.querySelector('#moveProductCategory').value, brandValue = document.querySelector('#moveProductBrand').value;
         if (batchMove) await api('/api/products/bulk-move', { method:'POST', body:JSON.stringify({ ids:[...selectedProducts], category, brand:brandValue, weight_value:Number(match[1]), weight_unit:match[2].toLowerCase() }) });
         else await api(`/api/products/${productToMove.id}`, { method:'PUT', body:JSON.stringify({ name:productToMove.name, category, brand:brandValue === 'Pozostałe' ? '' : brandValue, quantity:productToMove.quantity, unit:productToMove.unit, min_quantity:productToMove.min_quantity || 0, weight_value:Number(match[1]), weight_unit:match[2].toLowerCase(), received_date:productToMove.received_date, expiration_date:productToMove.expiration_date, notes:productToMove.notes || '' }) });
+        batchMove = false; selectedProducts.clear(); refreshBulkBar(); document.querySelector('#productMoveDialog').close(); await load();
+      } catch (error) { alert(error.message); }
+    };
+  </script>
+  <script>
+    document.querySelector('#productMoveForm').onsubmit = async event => {
+      event.preventDefault();
+      const source = productToMove || all.find(item => selectedProducts.has(item.id));
+      if (!source) return;
+      const rawWeight = document.querySelector('#moveProductWeight').value;
+      const match = rawWeight.match(/^(\d+(?:\.\d+)?)\s*(g|kg|ml|l)$/i);
+      const category = document.querySelector('#moveProductCategory').value || source.category;
+      const company = document.querySelector('#moveProductBrand').value || brand(source);
+      const weightValue = match ? Number(match[1]) : source.weight_value;
+      const weightUnit = match ? match[2].toLowerCase() : source.weight_unit;
+      try {
+        if (batchMove) await api('/api/products/bulk-move', { method:'POST', body:JSON.stringify({ ids:[...selectedProducts], category, brand:company, weight_value:weightValue, weight_unit:weightUnit }) });
+        else await api(`/api/products/${source.id}`, { method:'PUT', body:JSON.stringify({ name:source.name, category, brand:company === 'Pozostałe' ? '' : company, quantity:source.quantity, unit:source.unit, min_quantity:source.min_quantity || 0, weight_value:weightValue, weight_unit:weightUnit, received_date:source.received_date, expiration_date:source.expiration_date, notes:source.notes || '' }) });
         batchMove = false; selectedProducts.clear(); refreshBulkBar(); document.querySelector('#productMoveDialog').close(); await load();
       } catch (error) { alert(error.message); }
     };
