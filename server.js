@@ -60,8 +60,22 @@ for (const [name, type] of [['brand','TEXT'], ['received_date','TEXT'], ['image_
 
 // Telefon zapisuje zdjęcia jako dane obrazu. Domyślny limit Expressa (100 KB)
 // był zbyt mały, dlatego pozwalamy na bezpieczne zdjęcia do 15 MB.
+db.exec(`CREATE TABLE IF NOT EXISTS app_settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+)`);
+
 function syncBundledInventory() {
   if (dbPath === bundledDbPath || !fs.existsSync(bundledDbPath)) return 0;
+  const seeded = db.prepare("SELECT value FROM app_settings WHERE key='initial_inventory_seeded'").get();
+  if (seeded) return 0;
+  // Existing Railway volume already has user data. Mark it as initialized,
+  // but never re-add products that were deliberately removed by the user.
+  if (db.prepare('SELECT COUNT(*) AS count FROM products').get().count > 0) {
+    db.prepare("INSERT INTO app_settings (key, value) VALUES ('initial_inventory_seeded', 'true')").run();
+    return 0;
+  }
   const source = new DatabaseSync(bundledDbPath, { readOnly: true });
   const products = source.prepare('SELECT name, category, brand, unit, quantity, min_quantity, weight_grams, weight_value, weight_unit, expiration_date, received_date, image_data, notes FROM products').all();
   const exists = db.prepare("SELECT id FROM products WHERE name=? AND category=? AND COALESCE(brand,'')=COALESCE(?, '') AND COALESCE(weight_value,-1)=COALESCE(?,-1) AND COALESCE(weight_unit,'')=COALESCE(?, '') LIMIT 1");
@@ -76,6 +90,7 @@ function syncBundledInventory() {
       added += 1;
     }
     db.exec('COMMIT');
+    db.prepare("INSERT INTO app_settings (key, value) VALUES ('initial_inventory_seeded', 'true')").run();
   } catch (error) { db.exec('ROLLBACK'); throw error; }
   source.close();
   return added;
