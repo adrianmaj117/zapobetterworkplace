@@ -115,6 +115,9 @@ function productById(id) {
 function validNumber(value) {
   return typeof value === 'number' && Number.isFinite(value);
 }
+function storedBrand(category, brand) {
+  return brand === 'Pozostałe' || (category === 'Bakalie' && brand === 'HEBAR') ? '' : brand;
+}
 
 function parseExpiration(value) {
   if (!value) return null;
@@ -242,7 +245,7 @@ app.post('/api/paths', (req, res) => {
 app.delete('/api/paths', (req, res) => {
   const { level, category = '', brand = '', weight_value = null, weight_unit = '', password = '' } = req.body;
   if (password !== '123') return res.status(403).json({ error: 'Nieprawidłowe hasło.' });
-  const sourceBrand = brand === 'Pozostałe' ? '' : brand;
+  const sourceBrand = storedBrand(category, brand);
   let where = '', params = [], imageFilter = '', imageParams = [];
   if (level === 'category') { where = 'category=?'; params = [category]; imageFilter = 'category=? OR category LIKE ? OR category LIKE ?'; imageParams = [`category:${category}`, `brand:${category}:%`, `weight:${category}:%`]; }
   else if (level === 'brand') { where = "category=? AND (COALESCE(brand,'')=COALESCE(?, '') OR (?='' AND brand='Pozostałe'))"; params = [category, sourceBrand, sourceBrand]; imageFilter = 'category=? OR category LIKE ?'; imageParams = [`brand:${category}:${brand}`, `weight:${category}:${brand}:%`]; }
@@ -271,7 +274,7 @@ app.post('/api/category-images', (req, res) => {
 app.patch('/api/paths/rename', (req, res) => {
   const { level, category = '', brand = '', weight_value = null, weight_unit = '', value = '' } = req.body;
   const next = String(value).trim();
-  const sourceBrand = brand === 'Pozostałe' ? '' : brand;
+  const sourceBrand = storedBrand(category, brand);
   if (!next) return res.status(400).json({ error: 'Podaj nową nazwę.' });
   let result;
   if (level === 'category') {
@@ -296,7 +299,7 @@ app.patch('/api/paths/rename', (req, res) => {
 app.patch('/api/paths/move', (req, res) => {
   const { level, category = '', brand = '', weight_value = null, weight_unit = '', target = '' } = req.body;
   const destination = String(target).trim();
-  const sourceBrand = brand === 'Pozostałe' ? '' : brand;
+  const sourceBrand = storedBrand(category, brand);
   if (!destination) return res.status(400).json({ error: 'Wybierz miejsce docelowe.' });
   let result;
   if (level === 'category') {
@@ -315,7 +318,7 @@ app.patch('/api/paths/move', (req, res) => {
 
 app.patch('/api/paths/move-full', (req, res) => {
   const { level, category = '', brand = '', weight_value = null, weight_unit = '', target_category = '', target_brand = '', target_weight = '' } = req.body;
-  const sourceBrand = brand === 'Pozostałe' ? '' : brand;
+  const sourceBrand = storedBrand(category, brand);
   const destinationBrand = target_brand === 'Pozostałe' ? '' : target_brand;
   const match = String(target_weight).match(/^(\d+(?:[.,]\d+)?)\s*(g|kg|ml|l)$/i);
   if (!target_category || !target_brand || !match) return res.status(400).json({ error: 'Wybierz kategorię, firmę i gramaturę.' });
