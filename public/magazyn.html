@@ -248,6 +248,48 @@
         document.querySelector('#moveDialog').close(); state = { level: 'category' }; await load();
       } catch (error) { alert(error.message); }
     };
+    const selectedProducts = new Set(); let batchMove = false;
+    const bulkBar = document.createElement('div'); bulkBar.id = 'bulkBar';
+    bulkBar.style.cssText = 'display:none;gap:10px;align-items:center;margin:0 0 12px;padding:12px 14px;background:#fff;border:1px solid #dce5df;border-radius:12px';
+    document.querySelector('#products').before(bulkBar);
+    function refreshBulkBar() {
+      bulkBar.style.display = selectedProducts.size ? 'flex' : 'none';
+      bulkBar.innerHTML = `<strong>Zaznaczono: ${selectedProducts.size}</strong><button class="small-btn" id="bulkMove">Przenieś zaznaczone</button><button class="small-btn" id="bulkDelete">Usuń zaznaczone</button>`;
+    }
+    const selectionObserver = new MutationObserver(() => document.querySelectorAll('.product-card').forEach(card => {
+      if (card.querySelector('[data-select-product]')) return;
+      const edit = card.querySelector('[data-edit]'); if (!edit) return;
+      card.style.position = 'relative'; card.style.paddingLeft = '50px';
+      const check = document.createElement('input'); check.type = 'checkbox'; check.dataset.selectProduct = edit.dataset.edit;
+      check.style.cssText = 'position:absolute;left:16px;top:20px;width:18px;height:18px;accent-color:#0d654e'; card.prepend(check);
+    }));
+    selectionObserver.observe(document.querySelector('#products'), { childList: true, subtree: true });
+    document.addEventListener('change', event => {
+      const check = event.target.closest('[data-select-product]'); if (!check) return;
+      const id = Number(check.dataset.selectProduct); if (check.checked) selectedProducts.add(id); else selectedProducts.delete(id); refreshBulkBar();
+    });
+    document.addEventListener('click', async event => {
+      if (event.target.closest('#bulkDelete')) {
+        if (!confirm(`Usunąć ${selectedProducts.size} zaznaczone artykuły? Tej operacji nie można cofnąć.`)) return;
+        try { await api('/api/products/bulk-delete', { method:'POST', body:JSON.stringify({ ids:[...selectedProducts] }) }); selectedProducts.clear(); refreshBulkBar(); await load(); } catch (error) { alert(error.message); }
+      }
+      if (event.target.closest('#bulkMove')) {
+        const first = all.find(item => selectedProducts.has(item.id)); if (!first) return;
+        batchMove = true; productToMove = first;
+        options(document.querySelector('#moveProductCategory'), productCategories()); document.querySelector('#moveProductCategory').value = first.category;
+        updateMoveBrands(); document.querySelector('#moveProductBrand').value = brand(first); updateMoveWeights(); document.querySelector('#moveProductWeight').value = size(first);
+        document.querySelector('#productMoveDialog').showModal();
+      }
+    });
+    document.querySelector('#productMoveForm').onsubmit = async event => {
+      event.preventDefault(); const match = document.querySelector('#moveProductWeight').value.match(/^(\d+(?:\.\d+)?)\s*(g|kg|ml|l)$/i); if (!match) return alert('Wybierz prawidłową gramaturę.');
+      try {
+        const category = document.querySelector('#moveProductCategory').value, brandValue = document.querySelector('#moveProductBrand').value;
+        if (batchMove) await api('/api/products/bulk-move', { method:'POST', body:JSON.stringify({ ids:[...selectedProducts], category, brand:brandValue, weight_value:Number(match[1]), weight_unit:match[2].toLowerCase() }) });
+        else await api(`/api/products/${productToMove.id}`, { method:'PUT', body:JSON.stringify({ name:productToMove.name, category, brand:brandValue === 'Pozostałe' ? '' : brandValue, quantity:productToMove.quantity, unit:productToMove.unit, min_quantity:productToMove.min_quantity || 0, weight_value:Number(match[1]), weight_unit:match[2].toLowerCase(), received_date:productToMove.received_date, expiration_date:productToMove.expiration_date, notes:productToMove.notes || '' }) });
+        batchMove = false; selectedProducts.clear(); refreshBulkBar(); document.querySelector('#productMoveDialog').close(); await load();
+      } catch (error) { alert(error.message); }
+    };
   </script>
 </body>
 </html>

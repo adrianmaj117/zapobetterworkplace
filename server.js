@@ -329,6 +329,29 @@ app.delete('/api/products/:id', (req, res) => {
   res.status(204).end();
 });
 
+app.post('/api/products/bulk-delete', (req, res) => {
+  const ids = [...new Set((Array.isArray(req.body.ids) ? req.body.ids : []).map(Number).filter(Number.isInteger))];
+  if (!ids.length) return res.status(400).json({ error: 'Zaznacz co najmniej jeden artykuł.' });
+  const marks = ids.map(() => '?').join(',');
+  db.exec('BEGIN');
+  try {
+    db.prepare(`DELETE FROM movements WHERE product_id IN (${marks})`).run(...ids);
+    db.prepare(`DELETE FROM product_batches WHERE product_id IN (${marks})`).run(...ids);
+    const result = db.prepare(`DELETE FROM products WHERE id IN (${marks})`).run(...ids);
+    db.exec('COMMIT'); res.json({ deleted: result.changes });
+  } catch (error) { db.exec('ROLLBACK'); throw error; }
+});
+
+app.post('/api/products/bulk-move', (req, res) => {
+  const ids = [...new Set((Array.isArray(req.body.ids) ? req.body.ids : []).map(Number).filter(Number.isInteger))];
+  const { category = '', brand = '', weight_value = null, weight_unit = '' } = req.body;
+  if (!ids.length || !category || !brand || !Number.isFinite(Number(weight_value)) || !weight_unit) return res.status(400).json({ error: 'Wybierz pełną ścieżkę docelową.' });
+  const marks = ids.map(() => '?').join(',');
+  const result = db.prepare(`UPDATE products SET category=?, brand=?, weight_value=?, weight_unit=?, updated_at=CURRENT_TIMESTAMP WHERE id IN (${marks})`)
+    .run(category, brand === 'Pozostałe' ? '' : brand, Number(weight_value), weight_unit, ...ids);
+  res.json({ moved: result.changes });
+});
+
 app.post('/api/products/:id/movement', (req, res) => {
   const id = Number(req.params.id);
   const product = productById(id);
