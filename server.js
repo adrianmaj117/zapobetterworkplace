@@ -188,6 +188,16 @@ db.exec(`CREATE TABLE IF NOT EXISTS category_images (
   image_data TEXT NOT NULL,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 )`);
+db.exec(`CREATE TABLE IF NOT EXISTS inventory_paths (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  level TEXT NOT NULL CHECK(level IN ('category','brand','weight')),
+  category TEXT NOT NULL DEFAULT '',
+  brand TEXT NOT NULL DEFAULT '',
+  weight_value REAL,
+  weight_unit TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(level, category, brand, weight_value, weight_unit)
+)`);
 function moveTileImage(from, to) {
   if (from === to) return;
   const image = db.prepare('SELECT image_data FROM category_images WHERE category=?').get(from);
@@ -198,6 +208,22 @@ function moveTileImage(from, to) {
   db.prepare('UPDATE category_images SET category=?, updated_at=CURRENT_TIMESTAMP WHERE category=?').run(to, from);
 }
 app.get('/api/category-images', (req, res) => res.json(db.prepare('SELECT category, image_data FROM category_images').all()));
+app.get('/api/paths', (req, res) => res.json(db.prepare('SELECT level, category, brand, weight_value, weight_unit FROM inventory_paths ORDER BY id').all()));
+app.post('/api/paths', (req, res) => {
+  const { level, category = '', brand = '', value = '' } = req.body;
+  const name = String(value).trim();
+  if (!name || !['category','brand','weight'].includes(level)) return res.status(400).json({ error: 'Podaj nazwę nowej gałęzi.' });
+  let row;
+  if (level === 'category') row = { level, category:name, brand:'', weight_value:null, weight_unit:null };
+  else if (level === 'brand') row = { level, category, brand:name, weight_value:null, weight_unit:null };
+  else {
+    const match = name.match(/^(\d+(?:[.,]\d+)?)\s*(g|kg|ml|l)$/i);
+    if (!match) return res.status(400).json({ error: 'Podaj gramaturę np. 400 ml.' });
+    row = { level, category, brand, weight_value:Number(match[1].replace(',', '.')), weight_unit:match[2].toLowerCase() };
+  }
+  db.prepare('INSERT OR IGNORE INTO inventory_paths (level, category, brand, weight_value, weight_unit) VALUES (?, ?, ?, ?, ?)').run(row.level, row.category, row.brand, row.weight_value, row.weight_unit);
+  res.status(201).json(row);
+});
 app.post('/api/category-images', (req, res) => {
   const { category, image_data } = req.body;
   if (!category || !String(image_data || '').startsWith('data:image/')) return res.status(400).json({ error: 'Wybierz prawidłowe zdjęcie.' });

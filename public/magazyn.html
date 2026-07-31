@@ -101,6 +101,45 @@
       render();
       document.querySelector('.browse').scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
+    let savedPaths = [];
+    const originalRender = render;
+    render = () => {
+      originalRender();
+      if (state.level === 'products') return;
+      const tiles = document.querySelector('#tiles');
+      const present = [...tiles.querySelectorAll('[data-value]')].map(tile => tile.dataset.value);
+      const choices = savedPaths.filter(path =>
+        (state.level === 'category' && path.level === 'category') ||
+        (state.level === 'brand' && path.level === 'brand' && path.category === state.category) ||
+        (state.level === 'weight' && path.level === 'weight' && path.category === state.category && path.brand === state.brand)
+      );
+      for (const path of choices) {
+        const value = path.level === 'category' ? path.category : path.level === 'brand' ? path.brand : `${path.weight_value} ${path.weight_unit}`;
+        if (present.includes(value)) continue;
+        const tile = document.createElement('div');
+        const imageKey = key(value);
+        tile.className = 'tile'; tile.dataset.value = value;
+        tile.innerHTML = `<span>${esc(value)}</span><button type="button" class="path-edit" style="right:86px" data-move="${esc(value)}" title="Przenieś">⇄</button><button type="button" class="path-edit" data-path="${esc(value)}" title="Edytuj nazwę">✎</button><button type="button" class="image-edit" data-change="${esc(imageKey)}" title="Zmień zdjęcie">▣</button>`;
+        tiles.append(tile);
+      }
+      const plus = document.createElement('button');
+      plus.type = 'button'; plus.className = 'tile'; plus.dataset.addPath = '1';
+      plus.style.cssText = 'justify-content:center;align-items:center;background:#0d654e;font-size:44px;border:0';
+      plus.textContent = '+'; plus.title = 'Dodaj nową gałąź'; tiles.append(plus);
+    };
+    (async () => { savedPaths = await api('/api/paths'); render(); })();
+    document.addEventListener('click', async event => {
+      const plus = event.target.closest('[data-add-path]');
+      if (!plus) return;
+      event.preventDefault(); event.stopImmediatePropagation();
+      const label = state.level === 'category' ? 'nazwę kategorii' : state.level === 'brand' ? 'nazwę firmy' : 'gramaturę, np. 400 ml';
+      const value = prompt(`Podaj ${label}:`);
+      if (!value || !value.trim()) return;
+      try {
+        await api('/api/paths', { method: 'POST', body: JSON.stringify({ level: state.level, category: state.category || '', brand: state.brand || '', value }) });
+        savedPaths = await api('/api/paths'); render();
+      } catch (error) { alert(error.message); }
+    }, true);
   </script>
 </body>
 </html>
