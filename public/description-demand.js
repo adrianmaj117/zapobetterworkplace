@@ -12,11 +12,13 @@
   const productBrand = item => item.brand || (item.category === 'Bakalie' ? 'HEBAR' : 'Pozostałe');
   const productSize = item => item.weight_value ? `${item.weight_value} ${item.weight_unit}` : 'bez gramatury';
   const productLabel = item => `${item.name} — ${productBrand(item)} · ${productSize(item)} (stan: ${item.quantity} ${item.unit})`;
-  const categoryOptions = selected => [...new Set([...all.map(item => item.category), 'Nabiał', 'Inne'])].sort((a, b) => a.localeCompare(b, 'pl')).map(category => `<option ${category === selected ? 'selected' : ''}>${escapeHtml(category)}</option>`).join('');
+  const categoryOptions = selected => [...new Set([...cats, ...all.map(item => item.category), 'Nabiał', 'Owoce', 'Zioła', 'Bułki z Katowic', 'Inne'])].sort((a, b) => a.localeCompare(b, 'pl')).map(category => `<option ${category === selected ? 'selected' : ''}>${escapeHtml(category)}</option>`).join('');
   function suggestedCategory(line) {
     const value = normalize(line);
     const rules = [
-      ['Nabiał', ['mleko', 'jogurt', 'ser ', 'masl', 'smiet']], ['Soki', ['sok', 'pomidorow', 'jablko', 'gruszk']],
+      ['Bułki z Katowic', ['bulka', 'bulki', 'katowic']], ['Soki', ['sok', 'pomidorow']],
+      ['Owoce', ['owoce', 'banan', 'winogron', 'kiwi', 'cytryn', 'jablko', 'gruszk', 'pomarancz']], ['Zioła', ['ziola', 'bazyl', 'mieta', 'pietruszk', 'kolendr', 'koperek', 'rozmaryn']],
+      ['Nabiał', ['mleko', 'jogurt', 'ser ', 'masl', 'smiet']],
       ['Smoothie', ['smoothie', 'rokitnik', 'moringa', 'baobab']], ['Bakalie', ['orzech', 'migd', 'daktyl', 'zurawin', 'bakal']],
       ['Płatki / Musli / Granola', ['platki', 'musli', 'granola', 'corn flakes']], ['Ciastka i batony', ['baton', 'ciastk', 'crunchy']],
       ['Słodycze', ['czekolad', 'knoppers', 'haribo', 'bounty']], ['Kawa', ['kawa', 'arabica', 'robusta']],
@@ -55,11 +57,12 @@
       if (!Number.isFinite(quantity) || quantity <= 0) return;
       const name = product?.name || row.querySelector('.missing-name')?.value.trim() || proposedName(row.querySelector('.demand-raw').value);
       const category = product?.category || row.querySelector('.missing-category')?.value || suggestedCategory(row.querySelector('.demand-raw').value);
+      if (category === 'Bułki z Katowic') return;
       const key = product ? `product:${product.id}` : `missing:${normalize(name)}:${category}`;
       const entry = grouped.get(key) || { product_id:product?.id || null, name, category, brand:product ? productBrand(product) : '', weight:product ? productSize(product) : '', unit:product?.unit || 'szt.', required_quantity:0, available_quantity:product?.quantity || 0 };
       entry.required_quantity += quantity; grouped.set(key, entry);
     });
-    return [...grouped.values()].map(item => ({ ...item, missing_quantity:Math.max(0, item.required_quantity - item.available_quantity) })).filter(item => item.missing_quantity > 0).sort((a, b) => a.category.localeCompare(b.category, 'pl') || a.name.localeCompare(b.name, 'pl'));
+    return [...grouped.values()].map(item => ({ ...item, missing_quantity:Math.max(0, item.required_quantity - item.available_quantity) })).filter(item => item.missing_quantity > 0).sort((a, b) => (a.category === 'Owoce' ? 0 : 1) - (b.category === 'Owoce' ? 0 : 1) || a.category.localeCompare(b.category, 'pl') || a.name.localeCompare(b.name, 'pl'));
   }
   function renderShortages() {
     const box = document.querySelector('#demandShortages'), create = document.querySelector('#createShoppingList'), items = comparison();

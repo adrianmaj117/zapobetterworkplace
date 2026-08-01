@@ -298,7 +298,7 @@ app.get('/api/categories', (req, res) => {
 function shoppingListById(id) {
   const list = db.prepare('SELECT * FROM shopping_lists WHERE id=?').get(id);
   if (!list) return null;
-  list.items = db.prepare('SELECT * FROM shopping_list_items WHERE shopping_list_id=? ORDER BY category COLLATE NOCASE, name COLLATE NOCASE').all(id);
+  list.items = db.prepare("SELECT * FROM shopping_list_items WHERE shopping_list_id=? ORDER BY CASE WHEN category='Owoce' THEN 0 ELSE 1 END, category COLLATE NOCASE, name COLLATE NOCASE").all(id);
   return list;
 }
 app.get('/api/shopping-lists/latest', (req, res) => {
