@@ -315,10 +315,16 @@ app.get('/api/categories', (req, res) => {
   res.json(db.prepare("SELECT DISTINCT category FROM products WHERE category <> '' ORDER BY category COLLATE NOCASE").all().map(r => r.category));
 });
 
+function isExcludedShoppingItem(item) {
+  const normalize = value => String(value || '').toLocaleLowerCase('pl-PL').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+  const category = normalize(item.category);
+  const text = normalize(`${item.name} ${item.category}`);
+  return ['owoce', 'bulki z katowic', 'inne'].includes(category) || text.includes('office box') || ['bajgiel', 'bagiel', 'bulka', 'ciabatta', 'bagietka', 'kanapk'].some(word => text.includes(word));
+}
 function shoppingListById(id) {
   const list = db.prepare('SELECT * FROM shopping_lists WHERE id=?').get(id);
   if (!list) return null;
-  list.items = db.prepare("SELECT * FROM shopping_list_items WHERE shopping_list_id=? AND category COLLATE NOCASE NOT IN ('Owoce', 'Inne', 'Bułki z Katowic') ORDER BY category COLLATE NOCASE, name COLLATE NOCASE").all(id);
+  list.items = db.prepare("SELECT * FROM shopping_list_items WHERE shopping_list_id=? ORDER BY category COLLATE NOCASE, name COLLATE NOCASE").all(id).filter(item => !isExcludedShoppingItem(item));
   return list;
 }
 app.get('/api/shopping-lists/latest', (req, res) => {

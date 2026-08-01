@@ -9,6 +9,15 @@
   const localDate = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
   const escapeHtml = value => String(value || '').replace(/[&<>"']/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[char]));
   const normalize = value => String(value || '').toLocaleLowerCase('pl-PL').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+  // Kanapki i pieczywo z Katowic przyjeżdżają osobno — nie są częścią stanów ani zakupów.
+  const ignoredDemandLine = value => {
+    const text = normalize(value);
+    return text.includes('office box') || ['bajgiel', 'bagiel', 'bulka', 'ciabatta', 'bagietka', 'kanapk'].some(word => text.includes(word));
+  };
+  const excludedFromShopping = (category, text = '') => {
+    const group = normalize(category);
+    return ['owoce', 'bulki z katowic', 'inne'].includes(group) || ignoredDemandLine(`${category} ${text}`);
+  };
   const productBrand = item => item.brand || (item.category === 'Bakalie' ? 'HEBAR' : 'Pozostałe');
   const productSize = item => item.weight_value ? `${item.weight_value} ${item.weight_unit}` : 'bez gramatury';
   const productLabel = item => `${item.name} — ${productBrand(item)} · ${productSize(item)} (stan: ${item.quantity} ${item.unit})`;
@@ -57,7 +66,7 @@
       if (!Number.isFinite(quantity) || quantity <= 0) return;
       const name = product?.name || row.querySelector('.missing-name')?.value.trim() || proposedName(row.querySelector('.demand-raw').value);
       const category = product?.category || row.querySelector('.missing-category')?.value || suggestedCategory(row.querySelector('.demand-raw').value);
-      if (['owoce', 'bulki z katowic', 'inne'].includes(normalize(category))) return;
+      if (excludedFromShopping(category, `${row.querySelector('.demand-raw').value} ${name}`)) return;
       const key = product ? `product:${product.id}` : `missing:${normalize(name)}:${category}`;
       const entry = grouped.get(key) || { product_id:product?.id || null, name, category, brand:product ? productBrand(product) : '', weight:product ? productSize(product) : '', unit:product?.unit || 'szt.', required_quantity:0, available_quantity:product?.quantity || 0 };
       entry.required_quantity += quantity; grouped.set(key, entry);
@@ -85,7 +94,9 @@
     win.document.close(); win.focus(); setTimeout(() => win.print(), 250);
   }
   function buildPreview(text) {
-    const lines = text.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+    const enteredLines = text.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+    const ignoredLines = enteredLines.filter(ignoredDemandLine);
+    const lines = enteredLines.filter(line => !ignoredDemandLine(line));
     rows.innerHTML = ''; let matched = 0;
     lines.forEach(line => {
       const best = all.map(item => ({ item, score:score(line, item) })).sort((a, b) => b.score - a.score)[0];
@@ -95,7 +106,7 @@
     });
     if (!lines.length) addRow();
     preview.hidden = false; apply.disabled = false; renderShortages();
-    status.textContent = lines.length ? `Odczytano ${lines.length} ${lines.length === 1 ? 'wiersz' : 'wierszy'} od góry do dołu. Dopasowano automatycznie: ${matched}. Popraw każdą pozycję przed zatwierdzeniem.` : 'Wklej przynajmniej jeden wiersz opisu.';
+    status.textContent = lines.length ? `Odczytano ${lines.length} ${lines.length === 1 ? 'wiersz' : 'wierszy'} od góry do dołu. Dopasowano automatycznie: ${matched}.${ignoredLines.length ? ` Pominięto ${ignoredLines.length} pozycji kanapkowych/pieczywa z Katowic.` : ''} Popraw każdą pozycję przed zatwierdzeniem.` : (ignoredLines.length ? 'Pominięto pozycje kanapkowe/pieczywo z Katowic — nie są potrzebne do porównania.' : 'Wklej przynajmniej jeden wiersz opisu.');
   }
   let timer;
   document.querySelector('#demandText').addEventListener('click', () => { input.value = ''; rows.innerHTML = ''; preview.hidden = true; document.querySelector('#demandShortages').hidden = true; document.querySelector('#createShoppingList').hidden = true; apply.disabled = true; status.textContent = 'Wklej opis, aby rozpocząć.'; document.querySelector('#demandTextDate').value = localDate(); document.querySelector('#demandTextPassword').value = ''; dialog.showModal(); input.focus(); });
