@@ -31,7 +31,7 @@
   <main>
     <section class="warehouse-head">
       <p class="eyebrow">STANY MAGAZYNOWE</p>
-      <div><h1>Stany magazynowe</h1><div class="warehouse-actions"><button id="demand" class="button ghost demand-button">▣ Zapotrzebowanie ze zdjęcia</button><button id="add" class="button primary">＋ Dodaj artykuł</button></div></div>
+      <div><h1>Stany magazynowe</h1><div class="warehouse-actions"><button id="manualDemand" class="button ghost demand-button">☑ Zapotrzebowanie ręczne</button><button id="demand" class="button ghost demand-button">▣ Zapotrzebowanie ze zdjęcia</button><button id="add" class="button primary">＋ Dodaj artykuł</button></div></div>
     </section>
     <section>
       <h2>Najkrótsze terminy ważności</h2>
@@ -144,6 +144,33 @@
       <div id="dailySummary" class="daily-summary"></div>
       <div id="dailyRuns" class="daily-runs"></div>
       <div class="form-actions"><button type="button" id="closeDemandHistoryBottom" class="button ghost">Zamknij</button></div>
+    </form>
+  </dialog>
+  <dialog id="manualSelectDialog" class="demand-dialog manual-select-dialog">
+    <form method="dialog">
+      <div class="modal-head"><h2>Wybierz produkty do zapotrzebowania</h2><button type="button" id="closeManualSelect" class="icon-btn">×</button></div>
+      <p class="demand-intro">Produkty są ułożone alfabetycznie. Kliknij wiersz lub pole po lewej stronie, aby go zaznaczyć.</p>
+      <label class="manual-search">Szukaj produktu<input id="manualSearch" type="search" placeholder="Wpisz nazwę, firmę lub gramaturę"></label>
+      <div id="manualSelectionCount" class="demand-status">Zaznaczono: 0 produktów</div>
+      <div id="manualProductList" class="manual-product-list"></div>
+      <div class="form-actions"><button type="button" id="cancelManualSelect" class="button ghost">Anuluj</button><button type="button" id="manualSelectNext" class="button primary" disabled>Gotowe</button></div>
+    </form>
+  </dialog>
+  <dialog id="manualDemandDialog" class="demand-dialog manual-demand-dialog">
+    <form id="manualDemandForm">
+      <div class="modal-head"><h2>Ręczne zapotrzebowanie</h2><button type="button" id="closeManualDemand" class="icon-btn">×</button></div>
+      <div id="manualDemandEditor">
+        <label>Data zapotrzebowania<input id="manualDemandDate" type="date" required></label>
+        <p class="demand-intro">Wpisz ilość, którą chcesz odjąć przy każdym wybranym produkcie.</p>
+        <div id="manualDemandCards" class="manual-demand-cards"></div>
+        <div class="form-actions"><button type="button" id="backToManualSelect" class="button ghost">Wstecz</button><button type="button" id="manualShowSummary" class="button primary">Pokaż podsumowanie</button></div>
+      </div>
+      <div id="manualDemandSummary" hidden>
+        <p class="demand-intro">Sprawdź podsumowanie. Dopiero po zatwierdzeniu stany zostaną odjęte i zapisane w Historii dnia.</p>
+        <div id="manualSummaryList" class="manual-summary-list"></div>
+        <label>Hasło zatwierdzające<input id="manualDemandPassword" type="password" inputmode="numeric" placeholder="Wpisz hasło"></label>
+        <div class="form-actions"><button type="button" id="backToManualEditor" class="button ghost">Popraw ilości</button><button type="submit" id="applyManualDemand" class="button primary">Zatwierdź i zapisz</button></div>
+      </div>
     </form>
   </dialog>
   <script src="warehouse.js"></script>
@@ -372,5 +399,6 @@
   <script src="demand.js" defer></script>
   <script src="history.js" defer></script>
   <script src="inventory-overview.js" defer></script>
+  <script src="manual-demand.js" defer></script>
 </body>
 </html>

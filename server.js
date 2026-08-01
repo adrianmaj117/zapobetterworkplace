@@ -470,7 +470,7 @@ app.post('/api/demand/apply', (req, res) => {
       const quantity = quantities.get(product.id);
       snapshot.run(demandDate, product.id, product.quantity);
       update.run(quantity, product.id);
-      movement.run(product.id, quantity, `Zapotrzebowanie ze zdjęcia${source_name ? `: ${String(source_name).slice(0, 120)}` : ''}`);
+      movement.run(product.id, quantity, `Zapotrzebowanie${source_name ? `: ${String(source_name).slice(0, 120)}` : ''}`);
       addItem.run(run.lastInsertRowid, product.id, quantity);
     }
     db.exec('COMMIT');
