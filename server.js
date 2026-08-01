@@ -92,6 +92,27 @@ db.exec(`CREATE TABLE IF NOT EXISTS demand_day_products (
   PRIMARY KEY(demand_date, product_id),
   FOREIGN KEY(product_id) REFERENCES products(id) ON DELETE CASCADE
 )`);
+db.exec(`
+  CREATE TABLE IF NOT EXISTS shopping_lists (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_text TEXT DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE TABLE IF NOT EXISTS shopping_list_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    shopping_list_id INTEGER NOT NULL,
+    product_id INTEGER,
+    name TEXT NOT NULL,
+    category TEXT NOT NULL DEFAULT 'Inne',
+    brand TEXT DEFAULT '',
+    weight TEXT DEFAULT '',
+    required_quantity REAL NOT NULL,
+    available_quantity REAL NOT NULL DEFAULT 0,
+    missing_quantity REAL NOT NULL,
+    unit TEXT NOT NULL DEFAULT 'szt.',
+    FOREIGN KEY(shopping_list_id) REFERENCES shopping_lists(id) ON DELETE CASCADE
+  );
+`);
 
 function syncBundledInventory() {
   if (dbPath === bundledDbPath || !fs.existsSync(bundledDbPath)) return 0;
@@ -272,6 +293,34 @@ app.get('/api/products', (req, res) => {
 
 app.get('/api/categories', (req, res) => {
   res.json(db.prepare("SELECT DISTINCT category FROM products WHERE category <> '' ORDER BY category COLLATE NOCASE").all().map(r => r.category));
+});
+
+function shoppingListById(id) {
+  const list = db.prepare('SELECT * FROM shopping_lists WHERE id=?').get(id);
+  if (!list) return null;
+  list.items = db.prepare('SELECT * FROM shopping_list_items WHERE shopping_list_id=? ORDER BY category COLLATE NOCASE, name COLLATE NOCASE').all(id);
+  return list;
+}
+app.get('/api/shopping-lists/latest', (req, res) => {
+  const latest = db.prepare('SELECT id FROM shopping_lists ORDER BY id DESC LIMIT 1').get();
+  res.json(latest ? shoppingListById(latest.id) : null);
+});
+app.post('/api/shopping-lists', (req, res) => {
+  const rawItems = Array.isArray(req.body?.items) ? req.body.items : [];
+  const items = rawItems.map(item => ({
+    product_id: Number.isInteger(Number(item.product_id)) ? Number(item.product_id) : null,
+    name: String(item.name || '').trim(), category: String(item.category || 'Inne').trim() || 'Inne', brand: String(item.brand || '').trim(),
+    weight: String(item.weight || '').trim(), required_quantity: Number(item.required_quantity), available_quantity: Number(item.available_quantity),
+    missing_quantity: Number(item.missing_quantity), unit: String(item.unit || 'szt.').trim() || 'szt.'
+  })).filter(item => item.name && validNumber(item.required_quantity) && item.required_quantity > 0 && validNumber(item.available_quantity) && item.available_quantity >= 0 && validNumber(item.missing_quantity) && item.missing_quantity > 0);
+  if (!items.length) return res.status(400).json({ error: 'Nie ma produktów do dodania do listy zakupów.' });
+  db.exec('BEGIN');
+  try {
+    const list = db.prepare('INSERT INTO shopping_lists (source_text) VALUES (?)').run(String(req.body?.source_text || '').slice(0, 50000));
+    const add = db.prepare('INSERT INTO shopping_list_items (shopping_list_id, product_id, name, category, brand, weight, required_quantity, available_quantity, missing_quantity, unit) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    items.forEach(item => add.run(list.lastInsertRowid, item.product_id, item.name, item.category, item.brand, item.weight, item.required_quantity, item.available_quantity, item.missing_quantity, item.unit));
+    db.exec('COMMIT'); res.status(201).json(shoppingListById(Number(list.lastInsertRowid)));
+  } catch (error) { db.exec('ROLLBACK'); throw error; }
 });
 
 db.exec(`CREATE TABLE IF NOT EXISTS category_images (
