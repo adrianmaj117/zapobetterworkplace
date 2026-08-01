@@ -125,6 +125,49 @@ function syncBundledInventory() {
 const bundledItemsAdded = syncBundledInventory();
 if (bundledItemsAdded) console.log(`Dodano ${bundledItemsAdded} brakujących produktów do bazy.`);
 
+// Jednorazowe uporządkowanie nazw przekazane przez ZapoBetterWorkPlace.
+// Działa także na istniejącym wolumenie Railway, bez zmiany ilości i dat.
+function applyProductNameCorrections() {
+  const setting = 'product_name_corrections_2026_08_01';
+  if (db.prepare('SELECT value FROM app_settings WHERE key=?').get(setting)) return 0;
+  const corrections = [
+    ['Bakalie MIX 400g Hebar', 'Bakalie MIX 400g, Hebar'], ['Bakalie MIX 65g Hebar', 'Bakalie MIX 65g, Hebar'],
+    ['Baton Kokos i czekolada 35g', 'Baton Kokos i czekolada 35g, Dobra Kaloria'], ['Baton owocowy Chrupiący Orzech', 'Baton owocowy Chrupiący Orzech 35g, Dobra Kaloria'],
+    ['Baton owocowy Jabłko & Cynamon', 'Baton owocowy Jabłko & Cynamon 35g, Dobra Kaloria'], ['Baton owocowy Nerkowiec& Kokos', 'Baton owocowy Nerkowiec & Kokos 35g, Dobra Kaloria'],
+    ['Baton owocowy Orzeszki & Czekolada', 'Baton owocowy Orzeszki & Czekolada 35g, Dobra Kaloria'], ['Baton proteinowy z IG z MCT Karmel 45g', 'Baton proteinowy IG z MCT Karmel 45g, Dobra Kaloria'],
+    ['Ciasteczka zbożowe bez cukru Jagoda 300g', 'Ciasteczka zbożowe bez cukru jagoda 300g, Sante'], ['Ciasteczka zbożowe bez cukru Jagoda 50g', 'Ciasteczka zbożowe bez cukru jagoda 50g, Sante'],
+    ['Ciasteczka zbożowe bez cukru Kakao 300g', 'Ciasteczka zbożowe bez cukru kakaowe 300g, Sante'], ['Ciasteczka zbożowe bez cukru Kakao 50g', 'Ciasteczka zbożowe bez cukru kakaowe 50g, Sante'],
+    ['Ciasteczka zbożowe bez cukru Morela 300g', 'Ciasteczka zbożowe bez cukru morelowe 300g, Sante'], ['Ciasteczka zbożowe bez cukru Morela 50g', 'Ciasteczka zbożowe bez cukru morelowe 50g, Sante'],
+    ['Crunchy klasyczne 350g Sante', 'Crunchy klasyczne 350g, Sante'], ['Daktyle suszone 65g Hebar', 'Daktyle suszone 65g, Hebar'],
+    ['Dżem Truskawkowy 280g Łowicz', 'Dżem truskawkowy 280g, Łowicz'], ['Jogurt Naturalny', 'Jogurt naturalny 150g, Mlekovita'],
+    ['Kawa Exclusive', 'Kawa Exclusive - arabica 100% 1kg ziarno, Mała Palarnia'], ['Kawa Original', 'Kawa Original - arabica / robusta 80/20 1kg ziarno, Mała Palarnia'],
+    ['Kawa Special', 'Kawa Special - arabica / robusta 50/50 1kg ziarno, Mała Palarnia'], ['Migdały 65g Hebar', 'Migdały 65g, Hebar'],
+    ['Wielokwiatowy', 'Miód wielokwiatowy 400g, Miody Polskie'], ['Dobre Krafty', 'Miód wielokwiatowy (jasny) 350g, Dobre Krafty'],
+    ['Mleko 1,5% Bez Laktozy', 'Mleko bez laktozy UHT 1,5% karton 1L, Mlekovita'], ['Mleko 1,5%', 'Mleko UHT 1,5% karton 1L'], ['Mleko 3,2%', 'Mleko UHT 3,2% karton 1L'],
+    ['Morela suszona 65g Hebar', 'Morele suszone 65g, Hebar'], ['Orzechy laskowe 65g Hebar', 'Orzechy laskowe 65g, Hebar'],
+    ['Orzechy nerkowca 65g Hebar', 'Orzechy nerkowca 65g, Hebar'], ['Pistacje', 'Orzechy pistacjowe 300g, Hebar'],
+    ['Orzechy ziemne niesolone 65g Hebar', 'Orzechy ziemne niesolone 65g, Hebar'], ['Śliwka suszona 65g Hebar', 'Śliwka suszona 65g, Hebar'],
+    ['Baobab – Rembowskich', 'Smoothie BAOBAB (żółte) 250ml, Rembowscy'], ['Jagoda/Kokos – Rembowskich', 'Smoothie JAGODA 250ml, Rembowscy'],
+    ['Moringa – Rembowskich', 'Smoothie MORINGA (zielone) 250ml, Rembowscy'], ['Rokitnik – Rembowskich', 'Smoothie ROKITNIK (czerwone) 250ml, Rembowscy'],
+    ['Jabłko – Dolina Czerska', 'Sok jabłko 200ml, Dolina Czerska', 200, 'ml'], ['Jabłko – Sady Wincenta', 'Sok jabłko 330ml, Sady Wincenta', 330, 'ml'],
+    ['Gruszka – Sady Wincenta', 'Sok jabłko-gruszka 330ml, Sady Wincenta', 330, 'ml'], ['Gruszkowy – Sady Wincenta', 'Sok jabłko-gruszka 5L, Sady Wincenta', 5, 'l'],
+    ['Marchew – Sady Wincenta', 'Sok jabłko-marchew 330ml, Sady Wincenta', 330, 'ml'], ['Jabłko + Pomarańcza – Sady Wincenta', 'Sok jabłko-pomarańcza 330ml, Sady Wincenta', 330, 'ml'],
+    ['Pomarańcza – Sady Wincenta', 'Sok pomarańczowy 330ml, Sady Wincenta', 330, 'ml'], ['Pomidorowy – Sady Wincenta', 'Sok pomidorowy 330ml, Sady Wincenta', 330, 'ml'],
+    ['Żurawina suszona 65g Hebar', 'Żurawina suszona 65g, Hebar']
+  ];
+  const rename = db.prepare('UPDATE products SET name=?, updated_at=CURRENT_TIMESTAMP WHERE name=?');
+  const renameWeighted = db.prepare('UPDATE products SET name=?, updated_at=CURRENT_TIMESTAMP WHERE name=? AND weight_value=? AND weight_unit=?'); let changed = 0;
+  db.exec('BEGIN');
+  try {
+    for (const [oldName, newName, weightValue, weightUnit] of corrections) changed += weightValue == null ? rename.run(newName, oldName).changes : renameWeighted.run(newName, oldName, weightValue, weightUnit).changes;
+    db.prepare("INSERT INTO app_settings (key, value) VALUES (?, 'true')").run(setting);
+    db.exec('COMMIT');
+  } catch (error) { db.exec('ROLLBACK'); throw error; }
+  return changed;
+}
+const correctedProductNames = applyProductNameCorrections();
+if (correctedProductNames) console.log(`Zmieniono nazwy produktów: ${correctedProductNames}.`);
+
 app.use(express.json({ limit: '15mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
