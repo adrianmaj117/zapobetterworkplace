@@ -55,11 +55,11 @@
       <div class="modal-head"><h2>Dodaj dostawę</h2><button type="button" id="closeAdd" class="icon-btn">×</button></div>
       <div class="form-grid">
         <label>Kategoria<select id="category" required></select></label>
-        <label>Firma<input id="brand" placeholder="np. Sady Wincenta"></label>
-        <label>Wartość gramatury<input id="weightValue" type="number" min="0" placeholder="np. 200"></label>
-        <label>Gramatura<select id="weightUnit"><option>g</option><option>kg</option><option>ml</option><option>l</option></select></label>
-        <label>Nazwa artykułu<input id="name" required></label>
-        <label>Ilość sztuk<input id="quantity" type="number" min="0" required></label>
+        <label id="addBrandField">Firma<input id="brand" placeholder="np. Sady Wincenta"></label>
+        <label id="addWeightValueField">Wartość gramatury<input id="weightValue" type="number" min="0" placeholder="np. 200"></label>
+        <label id="addWeightUnitField">Gramatura<select id="weightUnit"><option>g</option><option>kg</option><option>ml</option><option>l</option></select></label>
+        <label id="addNameField">Nazwa artykułu<input id="name" required></label>
+        <label id="addQuantityField">Ilość sztuk<input id="quantity" type="number" min="0" step="any" required></label>
         <label>Data przyjęcia<input id="received" type="date"></label>
         <label>Data ważności<input id="expiry" type="date"></label>
         <label class="full">Zdjęcie produktu z telefonu<input id="photo" type="file" accept="image/*"></label>
@@ -72,12 +72,12 @@
       <div class="modal-head"><h2>Edytuj artykuł</h2><button type="button" id="closeEdit" class="icon-btn">×</button></div>
       <div class="form-grid">
         <label>Nazwa artykułu<input id="editName" required></label>
-        <label>Firma<input id="editBrand"></label>
+        <label id="editBrandField">Firma<input id="editBrand"></label>
         <label>Kategoria<select id="editCategory" required></select></label>
-        <label>Ilość sztuk<input id="editQuantity" type="number" min="0" step="any" required></label>
-        <label>Jednostka<select id="editUnit"><option>szt.</option><option>opak.</option><option>kg</option><option>l</option></select></label>
-        <label>Gramatura<select id="editWeightUnit"><option>g</option><option>kg</option><option>ml</option><option>l</option></select></label>
-        <label>Wartość gramatury<input id="editWeightValue" type="number" min="0"></label>
+        <label id="editQuantityField">Ilość sztuk<input id="editQuantity" type="number" min="0" step="any" required></label>
+        <label id="editUnitField">Jednostka<select id="editUnit"><option>szt.</option><option>opak.</option><option>kg</option><option>l</option></select></label>
+        <label id="editWeightUnitField">Gramatura<select id="editWeightUnit"><option>g</option><option>kg</option><option>ml</option><option>l</option></select></label>
+        <label id="editWeightValueField">Wartość gramatury<input id="editWeightValue" type="number" min="0"></label>
         <label>Data przyjęcia<input id="editReceived" type="date"></label>
         <label>Data ważności<input id="editExpiry" type="date"></label>
       </div>
@@ -427,5 +427,6 @@
   <script src="inventory-overview.js" defer></script>
   <script src="manual-demand.js" defer></script>
   <script src="description-demand.js" defer></script>
+  <script src="fruit-category.js" defer></script>
 </body>
 </html>
