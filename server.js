@@ -57,6 +57,9 @@ if (!db.prepare("PRAGMA table_info(products)").all().some(column => column.name 
 for (const [name, type] of [['brand','TEXT'], ['received_date','TEXT'], ['image_data','TEXT']]) {
   if (!db.prepare('PRAGMA table_info(products)').all().some(column => column.name === name)) db.exec(`ALTER TABLE products ADD COLUMN ${name} ${type}`);
 }
+if (!db.prepare("PRAGMA table_info(products)").all().some(column => column.name === 'barcode')) {
+  db.exec('ALTER TABLE products ADD COLUMN barcode TEXT');
+}
 
 // Telefon zapisuje zdjęcia jako dane obrazu. Domyślny limit Expressa (100 KB)
 // był zbyt mały, dlatego pozwalamy na bezpieczne zdjęcia do 15 MB.
@@ -302,7 +305,7 @@ app.get('/api/products', (req, res) => {
   }[sort] || 'name COLLATE NOCASE ASC';
   const rows = db.prepare(`
     SELECT id, name, category, unit, quantity, min_quantity, expiration_date, notes, created_at, updated_at,
-      weight_grams, weight_value, weight_unit, brand, received_date,
+      weight_grams, weight_value, weight_unit, brand, received_date, barcode,
       CASE WHEN image_data IS NOT NULL AND image_data <> '' THEN 1 ELSE 0 END AS has_image
     FROM products
     WHERE name LIKE @search AND (@category = '' OR category = @category)
@@ -483,12 +486,14 @@ app.patch('/api/paths/move-full', (req, res) => {
 });
 
 app.post('/api/products', (req, res) => {
-  const { name, category = 'Inne', brand = '', unit = 'szt.', quantity = 0, min_quantity = 0, weight_value = null, weight_unit = null, expiration_date = null, received_date = null, image_data = null, notes = '' } = req.body;
+  const { name, category = 'Inne', brand = '', unit = 'szt.', quantity = 0, min_quantity = 0, weight_value = null, weight_unit = null, expiration_date = null, received_date = null, image_data = null, notes = '', barcode = '' } = req.body;
   if (!name || !name.trim() || !validNumber(quantity) || quantity < 0 || !validNumber(min_quantity) || min_quantity < 0) {
     return res.status(400).json({ error: 'Podaj nazwę oraz prawidłowe ilości.' });
   }
-  const result = db.prepare(`INSERT INTO products (name, category, brand, unit, quantity, min_quantity, weight_value, weight_unit, expiration_date, received_date, image_data, notes, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`).run(name.trim(), category.trim() || 'Inne', brand.trim(), unit.trim() || 'szt.', quantity, min_quantity, validNumber(weight_value) && weight_value > 0 ? weight_value : null, weight_unit || null, parseExpiration(expiration_date), parseExpiration(received_date), image_data || null, notes.trim());
+  const normalizedBarcode = String(barcode || '').trim().replace(/[^0-9A-Za-z-]/g, '').toUpperCase();
+  if (normalizedBarcode && db.prepare('SELECT id FROM products WHERE barcode=?').get(normalizedBarcode)) return res.status(409).json({ error: 'Ten kod kreskowy jest już przypisany do innego artykułu.' });
+  const result = db.prepare(`INSERT INTO products (name, category, brand, unit, quantity, min_quantity, weight_value, weight_unit, expiration_date, received_date, image_data, notes, barcode, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`).run(name.trim(), category.trim() || 'Inne', brand.trim(), unit.trim() || 'szt.', quantity, min_quantity, validNumber(weight_value) && weight_value > 0 ? weight_value : null, weight_unit || null, parseExpiration(expiration_date), parseExpiration(received_date), image_data || null, notes.trim(), normalizedBarcode || null);
   if (quantity > 0) db.prepare("INSERT INTO movements (product_id, type, quantity, note) VALUES (?, 'add', ?, 'Stan początkowy')").run(result.lastInsertRowid, quantity);
   res.status(201).json(productById(result.lastInsertRowid));
 });
@@ -497,13 +502,15 @@ app.put('/api/products/:id', (req, res) => {
   const id = Number(req.params.id);
   const existing = productById(id);
   if (!existing) return res.status(404).json({ error: 'Nie znaleziono produktu.' });
-  const { name, category, brand = '', unit, quantity = existing.quantity, min_quantity = 0, weight_value = null, weight_unit = null, received_date, expiration_date, notes } = req.body;
+  const { name, category, brand = '', unit, quantity = existing.quantity, min_quantity = 0, weight_value = null, weight_unit = null, received_date, expiration_date, notes, barcode = existing.barcode || '' } = req.body;
   if (!name || !name.trim() || !validNumber(min_quantity) || min_quantity < 0) return res.status(400).json({ error: 'Sprawdź wymagane pola.' });
   if (!validNumber(quantity) || quantity < 0) return res.status(400).json({ error: 'Podaj prawidłową ilość.' });
+  const normalizedBarcode = String(barcode || '').trim().replace(/[^0-9A-Za-z-]/g, '').toUpperCase();
+  if (normalizedBarcode && db.prepare('SELECT id FROM products WHERE barcode=? AND id<>?').get(normalizedBarcode, id)) return res.status(409).json({ error: 'Ten kod kreskowy jest już przypisany do innego artykułu.' });
   db.exec('BEGIN');
   try {
-    db.prepare(`UPDATE products SET name=?, category=?, brand=?, unit=?, quantity=?, min_quantity=?, weight_value=?, weight_unit=?, received_date=?, expiration_date=?, notes=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`)
-      .run(name.trim(), (category || 'Inne').trim(), brand.trim(), (unit || 'szt.').trim(), quantity, min_quantity, validNumber(weight_value) && weight_value > 0 ? weight_value : null, weight_unit || null, parseExpiration(received_date), parseExpiration(expiration_date), (notes || '').trim(), id);
+    db.prepare(`UPDATE products SET name=?, category=?, brand=?, unit=?, quantity=?, min_quantity=?, weight_value=?, weight_unit=?, received_date=?, expiration_date=?, notes=?, barcode=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`)
+      .run(name.trim(), (category || 'Inne').trim(), brand.trim(), (unit || 'szt.').trim(), quantity, min_quantity, validNumber(weight_value) && weight_value > 0 ? weight_value : null, weight_unit || null, parseExpiration(received_date), parseExpiration(expiration_date), (notes || '').trim(), normalizedBarcode || null, id);
     const difference = quantity - existing.quantity;
     if (difference !== 0) db.prepare("INSERT INTO movements (product_id, type, quantity, note) VALUES (?, 'adjustment', ?, 'Edycja ilości')").run(id, Math.abs(difference));
     db.exec('COMMIT');

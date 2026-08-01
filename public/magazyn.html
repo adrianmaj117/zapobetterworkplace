@@ -32,7 +32,7 @@
   <main>
     <section class="warehouse-head">
       <p class="eyebrow">STANY MAGAZYNOWE</p>
-      <div><h1>Stany magazynowe</h1><div class="warehouse-actions"><button id="manualDemand" class="button ghost demand-button">☑ Zapotrzebowanie ręczne</button><button id="demandText" class="button ghost demand-button">▤ Zapotrzebowanie z opisu</button><button id="demand" class="button ghost demand-button">▣ Zapotrzebowanie ze zdjęcia</button><button id="add" class="button primary">＋ Dodaj artykuł</button></div></div>
+      <div><h1>Stany magazynowe</h1><div class="warehouse-actions"><button id="manualDemand" class="button ghost demand-button">☑ Zapotrzebowanie ręczne</button><button id="demandText" class="button ghost demand-button">▤ Zapotrzebowanie z opisu</button><button id="demand" class="button ghost demand-button">▣ Zapotrzebowanie ze zdjęcia</button><button id="barcodeLookup" class="button ghost">▥ Znajdź artykuł</button><button id="add" class="button primary">＋ Dodaj artykuł</button></div></div>
     </section>
     <section>
       <h2>Najkrótsze terminy ważności</h2>
@@ -59,6 +59,7 @@
         <label id="addWeightValueField">Wartość gramatury<input id="weightValue" type="number" min="0" placeholder="np. 200"></label>
         <label id="addWeightUnitField">Gramatura<select id="weightUnit"><option>g</option><option>kg</option><option>ml</option><option>l</option></select></label>
         <label id="addNameField">Nazwa artykułu<input id="name" required></label>
+        <label>Kod kreskowy <small>(opcjonalnie)</small><input id="barcode" inputmode="numeric" autocomplete="off" placeholder="np. 590…"></label>
         <label id="addQuantityField">Ilość sztuk<input id="quantity" type="number" min="0" step="any" required></label>
         <label>Data przyjęcia<input id="received" type="date"></label>
         <label>Data ważności<input id="expiry" type="date"></label>
@@ -74,6 +75,7 @@
         <label>Nazwa artykułu<input id="editName" required></label>
         <label id="editBrandField">Firma<input id="editBrand"></label>
         <label>Kategoria<select id="editCategory" required></select></label>
+        <label>Kod kreskowy <small>(opcjonalnie)</small><input id="editBarcode" inputmode="numeric" autocomplete="off"></label>
         <label id="editQuantityField">Ilość sztuk<input id="editQuantity" type="number" min="0" step="any" required></label>
         <label id="editUnitField">Jednostka<select id="editUnit"><option>szt.</option><option>opak.</option><option>kg</option><option>l</option></select></label>
         <label id="editWeightUnitField">Gramatura<select id="editWeightUnit"><option>g</option><option>kg</option><option>ml</option><option>l</option></select></label>
@@ -82,6 +84,17 @@
         <label>Data ważności<input id="editExpiry" type="date"></label>
       </div>
       <div class="form-actions"><button type="button" id="cancelEdit" class="button ghost">Anuluj</button><button type="submit" class="button primary">Zapisz zmiany</button></div>
+    </form>
+  </dialog>
+  <dialog id="barcodeDialog" class="demand-dialog barcode-dialog">
+    <form method="dialog">
+      <div class="modal-head"><h2>Znajdź artykuł kodem</h2><button type="button" id="closeBarcode" class="icon-btn">×</button></div>
+      <p class="demand-intro">Włącz aparat i ustaw kod kreskowy w ramce. Możesz też wpisać lub wkleić kod ręcznie.</p>
+      <div class="barcode-camera"><video id="barcodeVideo" playsinline muted></video><div class="barcode-frame" aria-hidden="true"></div></div>
+      <div id="barcodeStatus" class="demand-status">Aparat jest wyłączony.</div>
+      <label>Kod kreskowy<input id="barcodeManual" inputmode="numeric" autocomplete="off" placeholder="Wpisz lub zeskanuj kod"></label>
+      <section id="barcodeResult" class="barcode-result" hidden></section>
+      <div class="form-actions"><button type="button" id="startBarcodeCamera" class="button primary">Włącz aparat</button><button type="button" id="findBarcodeManual" class="button ghost">Sprawdź kod</button><button type="button" id="barcodeAddMissing" class="button primary" hidden>＋ Dodaj artykuł</button><button type="button" id="cancelBarcode" class="button ghost">Zamknij</button></div>
     </form>
   </dialog>
   <dialog id="pathDialog">
@@ -200,6 +213,7 @@
     </form>
   </dialog>
   <script src="warehouse.js"></script>
+  <script src="barcode.js"></script>
   <script>
     new MutationObserver(() => document.querySelectorAll('.nearest-card').forEach(card => {
       card.style.cursor = 'pointer'; card.title = 'Otwórz produkt';
