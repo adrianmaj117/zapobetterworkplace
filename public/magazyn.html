@@ -31,7 +31,7 @@
   <main>
     <section class="warehouse-head">
       <p class="eyebrow">STANY MAGAZYNOWE</p>
-      <div><h1>Stany magazynowe</h1><div class="warehouse-actions"><button id="manualDemand" class="button ghost demand-button">☑ Zapotrzebowanie ręczne</button><button id="demand" class="button ghost demand-button">▣ Zapotrzebowanie ze zdjęcia</button><button id="add" class="button primary">＋ Dodaj artykuł</button></div></div>
+      <div><h1>Stany magazynowe</h1><div class="warehouse-actions"><button id="manualDemand" class="button ghost demand-button">☑ Zapotrzebowanie ręczne</button><button id="demandText" class="button ghost demand-button">▤ Zapotrzebowanie z opisu</button><button id="demand" class="button ghost demand-button">▣ Zapotrzebowanie ze zdjęcia</button><button id="add" class="button primary">＋ Dodaj artykuł</button></div></div>
     </section>
     <section>
       <h2>Najkrótsze terminy ważności</h2>
@@ -144,6 +144,21 @@
       <div id="dailySummary" class="daily-summary"></div>
       <div id="dailyRuns" class="daily-runs"></div>
       <div class="form-actions"><button type="button" id="closeDemandHistoryBottom" class="button ghost">Zamknij</button></div>
+    </form>
+  </dialog>
+  <dialog id="demandTextDialog" class="demand-dialog">
+    <form id="demandTextForm">
+      <div class="modal-head"><h2>Zapotrzebowanie z opisu</h2><button type="button" id="closeDemandText" class="icon-btn">×</button></div>
+      <p class="demand-intro">Wklej opis zapotrzebowania. Każdy wiersz będzie odczytany od góry do dołu, a przed zatwierdzeniem możesz zmienić produkt lub ilość.</p>
+      <label class="demand-text-input">Opis zapotrzebowania<textarea id="demandTextInput" rows="13" placeholder="Np.&#10;Orzech laskowy 65 g HEBAR 12 szt.&#10;Sok Jabłko Sady Wincenta 330 ml 24 szt."></textarea></label>
+      <label>Data zapotrzebowania<input id="demandTextDate" type="date" required></label>
+      <div id="demandTextStatus" class="demand-status">Wklej opis, aby rozpocząć.</div>
+      <div id="demandTextPreview" class="demand-preview" hidden>
+        <div class="demand-preview-head"><strong>Pozycje z opisu</strong><button type="button" id="addDemandTextRow" class="small-btn">＋ Dodaj pozycję</button></div>
+        <div id="demandTextRows"></div>
+        <label>Hasło zatwierdzające<input id="demandTextPassword" type="password" inputmode="numeric" placeholder="Wpisz hasło"></label>
+      </div>
+      <div class="form-actions"><button type="button" id="cancelDemandText" class="button ghost">Anuluj</button><button id="applyDemandText" type="submit" class="button primary" disabled>Zatwierdź i odejmij</button></div>
     </form>
   </dialog>
   <dialog id="manualSelectDialog" class="demand-dialog manual-select-dialog">
@@ -400,5 +415,6 @@
   <script src="history.js" defer></script>
   <script src="inventory-overview.js" defer></script>
   <script src="manual-demand.js" defer></script>
+  <script src="description-demand.js" defer></script>
 </body>
 </html>
