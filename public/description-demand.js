@@ -57,7 +57,7 @@
       if (!Number.isFinite(quantity) || quantity <= 0) return;
       const name = product?.name || row.querySelector('.missing-name')?.value.trim() || proposedName(row.querySelector('.demand-raw').value);
       const category = product?.category || row.querySelector('.missing-category')?.value || suggestedCategory(row.querySelector('.demand-raw').value);
-      if (category === 'Bułki z Katowic') return;
+      if (['Owoce', 'Bułki z Katowic', 'Inne'].includes(category)) return;
       const key = product ? `product:${product.id}` : `missing:${normalize(name)}:${category}`;
       const entry = grouped.get(key) || { product_id:product?.id || null, name, category, brand:product ? productBrand(product) : '', weight:product ? productSize(product) : '', unit:product?.unit || 'szt.', required_quantity:0, available_quantity:product?.quantity || 0 };
       entry.required_quantity += quantity; grouped.set(key, entry);
