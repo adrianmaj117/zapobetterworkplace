@@ -74,13 +74,13 @@
   function renderShoppingList(list) {
     const content = document.querySelector('#shoppingListContent'), print = document.querySelector('#printShoppingList');
     if (!list?.items?.length) { content.innerHTML = '<p class="demand-status">Nie ma jeszcze zapisanej listy zakupów.</p>'; print.hidden = true; return; }
-    content.innerHTML = `<p class="shopping-list-date">Utworzono: ${escapeHtml(list.created_at || '')}</p>${list.items.map(item => `<article><span><b>${escapeHtml(item.name)}</b><small>${escapeHtml(item.category)}${item.brand ? ` · ${escapeHtml(item.brand)}` : ''}${item.weight ? ` · ${escapeHtml(item.weight)}` : ''}</small></span><span>stan: ${item.available_quantity} ${escapeHtml(item.unit)}<b>do kupienia: ${item.missing_quantity} ${escapeHtml(item.unit)}</b></span></article>`).join('')}`;
+    content.innerHTML = `<p class="shopping-list-date">Na dzień: ${escapeHtml(list.list_date || list.created_at || '')}</p>${list.items.map(item => `<article><span><b>${escapeHtml(item.name)}</b><small>${escapeHtml(item.category)}${item.brand ? ` · ${escapeHtml(item.brand)}` : ''}${item.weight ? ` · ${escapeHtml(item.weight)}` : ''}</small></span><span>stan: ${item.available_quantity} ${escapeHtml(item.unit)}<b>do kupienia: ${item.missing_quantity} ${escapeHtml(item.unit)}</b></span></article>`).join('')}`;
     print.hidden = false; print.dataset.list = JSON.stringify(list);
   }
   function printShoppingList(list) {
     const win = window.open('', '_blank'); if (!win) return alert('Przeglądarka zablokowała okno wydruku. Zezwól na wyskakujące okna i spróbuj ponownie.');
     const rowsForPrint = list.items.map(item => `<tr><td>${escapeHtml(item.category)}</td><td>${escapeHtml(item.name)}${item.brand ? `<br><small>${escapeHtml(item.brand)}${item.weight ? ` · ${escapeHtml(item.weight)}` : ''}</small>` : ''}</td><td>${item.available_quantity} ${escapeHtml(item.unit)}</td><td><b>${item.missing_quantity} ${escapeHtml(item.unit)}</b></td></tr>`).join('');
-    win.document.write(`<!doctype html><html lang="pl"><head><meta charset="utf-8"><title>Lista zakupów</title><style>body{font-family:Arial,sans-serif;color:#173b2e;padding:28px}h1{font-family:Georgia,serif}table{width:100%;border-collapse:collapse;margin-top:22px}th,td{border-bottom:1px solid #ccd8d0;text-align:left;padding:11px}th{background:#eaf3ed}small{color:#5d7168}@media print{body{padding:0}}</style></head><body><h1>Lista zakupów — ZapoBetterWorkPlace</h1><p>Utworzono: ${escapeHtml(list.created_at || '')}</p><table><thead><tr><th>Kategoria</th><th>Produkt</th><th>Stan</th><th>Do kupienia</th></tr></thead><tbody>${rowsForPrint}</tbody></table></body></html>`);
+    win.document.write(`<!doctype html><html lang="pl"><head><meta charset="utf-8"><title>Lista zakupów</title><style>body{font-family:Arial,sans-serif;color:#173b2e;padding:28px}h1{font-family:Georgia,serif}table{width:100%;border-collapse:collapse;margin-top:22px}th,td{border-bottom:1px solid #ccd8d0;text-align:left;padding:11px}th{background:#eaf3ed}small{color:#5d7168}@media print{body{padding:0}}</style></head><body><h1>Lista zakupów — ZapoBetterWorkPlace</h1><p>Na dzień: ${escapeHtml(list.list_date || list.created_at || '')}</p><table><thead><tr><th>Kategoria</th><th>Produkt</th><th>Stan</th><th>Do kupienia</th></tr></thead><tbody>${rowsForPrint}</tbody></table></body></html>`);
     win.document.close(); win.focus(); setTimeout(() => win.print(), 250);
   }
   function buildPreview(text) {
@@ -101,13 +101,14 @@
   ['closeDemandText', 'cancelDemandText'].forEach(id => document.querySelector(`#${id}`).addEventListener('click', () => dialog.close()));
   ['closeShoppingList', 'closeShoppingListBottom'].forEach(id => document.querySelector(`#${id}`).addEventListener('click', () => document.querySelector('#shoppingListDialog').close()));
   document.querySelector('#shoppingList').addEventListener('click', async () => { try { renderShoppingList(await api('/api/shopping-lists/latest')); document.querySelector('#shoppingListDialog').showModal(); } catch (error) { alert(error.message); } });
+  document.querySelector('#openDemandTextFromShopping').addEventListener('click', () => { document.querySelector('#shoppingListDialog').close(); document.querySelector('#demandText').click(); });
   document.querySelector('#printShoppingList').addEventListener('click', event => { const list = JSON.parse(event.currentTarget.dataset.list || 'null'); if (list) printShoppingList(list); });
   input.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(() => buildPreview(input.value), 250); });
   document.querySelector('#addDemandTextRow').addEventListener('click', () => addRow());
   document.querySelector('#createShoppingList').addEventListener('click', async () => {
     const items = comparison(); if (!items.length) return alert('Nie ma braków do dodania do listy zakupów.');
     const button = document.querySelector('#createShoppingList'); button.disabled = true;
-    try { renderShoppingList(await api('/api/shopping-lists', { method:'POST', body:JSON.stringify({ items, source_text:input.value }) })); document.querySelector('#shoppingListDialog').showModal(); }
+    try { renderShoppingList(await api('/api/shopping-lists', { method:'POST', body:JSON.stringify({ items, source_text:input.value, list_date:document.querySelector('#demandTextDate').value }) })); document.querySelector('#shoppingListDialog').showModal(); }
     catch (error) { alert(error.message); } finally { button.disabled = false; }
   });
   function clearMissing(row) { row.classList.remove('is-missing'); row.querySelector('.missing-product-panel')?.remove(); }

@@ -96,6 +96,7 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS shopping_lists (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     source_text TEXT DEFAULT '',
+    list_date TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   );
   CREATE TABLE IF NOT EXISTS shopping_list_items (
@@ -113,6 +114,7 @@ db.exec(`
     FOREIGN KEY(shopping_list_id) REFERENCES shopping_lists(id) ON DELETE CASCADE
   );
 `);
+if (!db.prepare('PRAGMA table_info(shopping_lists)').all().some(column => column.name === 'list_date')) db.exec('ALTER TABLE shopping_lists ADD COLUMN list_date TEXT');
 
 function syncBundledInventory() {
   if (dbPath === bundledDbPath || !fs.existsSync(bundledDbPath)) return 0;
@@ -188,6 +190,24 @@ function applyProductNameCorrections() {
 }
 const correctedProductNames = applyProductNameCorrections();
 if (correctedProductNames) console.log(`Zmieniono nazwy produktów: ${correctedProductNames}.`);
+
+function ensureFruitProducts() {
+  const setting = 'default_fruit_products_2026_08_01';
+  if (db.prepare('SELECT value FROM app_settings WHERE key=?').get(setting)) return 0;
+  const names = ['Banan', 'Jabłko', 'Śliwka', 'Morela', 'Brzoskwinia', 'Nektarynka'];
+  const exists = db.prepare("SELECT id FROM products WHERE category='Owoce' AND name=? LIMIT 1");
+  const add = db.prepare("INSERT INTO products (name, category, brand, unit, quantity, min_quantity, weight_value, weight_unit, notes, updated_at) VALUES (?, 'Owoce', '', 'kg', 0, 0, NULL, NULL, '', CURRENT_TIMESTAMP)");
+  let added = 0;
+  db.exec('BEGIN');
+  try {
+    names.forEach(name => { if (!exists.get(name)) { add.run(name); added += 1; } });
+    db.prepare("INSERT INTO app_settings (key, value) VALUES (?, 'true')").run(setting);
+    db.exec('COMMIT');
+  } catch (error) { db.exec('ROLLBACK'); throw error; }
+  return added;
+}
+const defaultFruitProducts = ensureFruitProducts();
+if (defaultFruitProducts) console.log(`Dodano domyślne owoce: ${defaultFruitProducts}.`);
 
 app.use(express.json({ limit: '15mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
@@ -316,7 +336,8 @@ app.post('/api/shopping-lists', (req, res) => {
   if (!items.length) return res.status(400).json({ error: 'Nie ma produktów do dodania do listy zakupów.' });
   db.exec('BEGIN');
   try {
-    const list = db.prepare('INSERT INTO shopping_lists (source_text) VALUES (?)').run(String(req.body?.source_text || '').slice(0, 50000));
+    const listDate = /^\d{4}-\d{2}-\d{2}$/.test(String(req.body?.list_date || '')) ? req.body.list_date : new Date().toISOString().slice(0, 10);
+    const list = db.prepare('INSERT INTO shopping_lists (source_text, list_date) VALUES (?, ?)').run(String(req.body?.source_text || '').slice(0, 50000), listDate);
     const add = db.prepare('INSERT INTO shopping_list_items (shopping_list_id, product_id, name, category, brand, weight, required_quantity, available_quantity, missing_quantity, unit) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
     items.forEach(item => add.run(list.lastInsertRowid, item.product_id, item.name, item.category, item.brand, item.weight, item.required_quantity, item.available_quantity, item.missing_quantity, item.unit));
     db.exec('COMMIT'); res.status(201).json(shoppingListById(Number(list.lastInsertRowid)));

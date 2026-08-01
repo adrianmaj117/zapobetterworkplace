@@ -20,6 +20,22 @@
   });
   $('#add').addEventListener('click', () => setTimeout(() => syncFruitFields('add'), 300));
   $('#products').addEventListener('click', event => { if (event.target.closest('[data-edit]')) setTimeout(() => syncFruitFields('edit'), 0); });
+  const standardRender = render;
+  render = () => {
+    standardRender();
+    if (state.level !== 'products' || state.category !== 'Owoce') return;
+    const fruits = all.filter(item => item.category === 'Owoce').sort((a, b) => a.name.localeCompare(b.name, 'pl'));
+    $('#crumb').textContent = 'Owoce';
+    $('#products').innerHTML = fruits.map(item => `<article class="product-card fruit-card"><div class="product-img" style="background-image:url('${item.image_data || images['category:Owoce'] || 'assets/category-foods.png'}')"></div><div><p>Owoce</p><h3>${esc(item.name)}</h3><p>Przyjęto: ${date(item.received_date)} · Termin: <b>${date(item.expiration_date)}</b></p><div class="product-actions"><button class="small-btn" data-photo="${item.id}">▣ Zdjęcie</button><button class="small-btn" data-edit="${item.id}">Edytuj</button></div></div><div class="stock">${item.quantity}<small>kg</small></div></article>`).join('') || '<p>Brak owoców.</p>';
+    fruits.forEach(fetchProductImage);
+  };
+  const standardBack = $('#back').onclick;
+  $('#back').onclick = () => { if (state.level === 'products' && state.category === 'Owoce') { state = { level:'category' }; render(); } else standardBack(); };
+  $('#tiles').addEventListener('click', event => {
+    const tile = event.target.closest('.tile');
+    if (!tile || tile.dataset.value !== 'Owoce' || event.target.closest('button')) return;
+    setTimeout(() => { state = { level:'products', category:'Owoce', brand:'', weight:'' }; render(); }, 0);
+  });
 
   const regularAdd = $('#addForm').onsubmit;
   $('#addForm').onsubmit = async event => {
