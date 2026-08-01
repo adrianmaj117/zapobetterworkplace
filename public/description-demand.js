@@ -66,14 +66,15 @@
   }
   function renderShortages() {
     const box = document.querySelector('#demandShortages'), create = document.querySelector('#createShoppingList'), items = comparison();
-    box.hidden = false; create.hidden = !items.length;
+    box.hidden = false; create.hidden = false; create.textContent = '↻ Odśwież listę zakupów';
     if (!items.length) { box.className = 'demand-shortages is-clear'; box.innerHTML = '<strong>✓ Stany wystarczają do realizacji podanych pozycji.</strong>'; return; }
     box.className = 'demand-shortages';
     box.innerHTML = `<strong>Brakuje ${items.length} ${items.length === 1 ? 'produktu' : 'produktów'} do realizacji zapotrzebowania</strong><div>${items.map(item => `<article><span><b>${escapeHtml(item.name)}</b><small>${escapeHtml(item.category)}${item.brand ? ` · ${escapeHtml(item.brand)}` : ''}${item.weight ? ` · ${escapeHtml(item.weight)}` : ''}</small></span><span>stan: ${item.available_quantity} ${escapeHtml(item.unit)}<b>brakuje: ${item.missing_quantity} ${escapeHtml(item.unit)}</b></span></article>`).join('')}</div>`;
   }
   function renderShoppingList(list) {
     const content = document.querySelector('#shoppingListContent'), print = document.querySelector('#printShoppingList');
-    if (!list?.items?.length) { content.innerHTML = '<p class="demand-status">Nie ma jeszcze zapisanej listy zakupów.</p>'; print.hidden = true; return; }
+    if (!list) { content.innerHTML = '<p class="demand-status">Nie ma jeszcze porównanego zapotrzebowania. Wklej nowy opis, aby utworzyć listę.</p>'; print.hidden = true; return; }
+    if (!list.items?.length) { content.innerHTML = `<p class="shopping-list-date">Na dzień: ${escapeHtml(list.list_date || list.created_at || '')}</p><p class="demand-status">✓ W bieżącym zapotrzebowaniu nie ma produktów do kupienia.</p>`; print.hidden = true; return; }
     content.innerHTML = `<p class="shopping-list-date">Na dzień: ${escapeHtml(list.list_date || list.created_at || '')}</p>${list.items.map(item => `<article><span><b>${escapeHtml(item.name)}</b><small>${escapeHtml(item.category)}${item.brand ? ` · ${escapeHtml(item.brand)}` : ''}${item.weight ? ` · ${escapeHtml(item.weight)}` : ''}</small></span><span>stan: ${item.available_quantity} ${escapeHtml(item.unit)}<b>do kupienia: ${item.missing_quantity} ${escapeHtml(item.unit)}</b></span></article>`).join('')}`;
     print.hidden = false; print.dataset.list = JSON.stringify(list);
   }
@@ -106,7 +107,7 @@
   input.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(() => buildPreview(input.value), 250); });
   document.querySelector('#addDemandTextRow').addEventListener('click', () => addRow());
   document.querySelector('#createShoppingList').addEventListener('click', async () => {
-    const items = comparison(); if (!items.length) return alert('Nie ma braków do dodania do listy zakupów.');
+    const items = comparison();
     const button = document.querySelector('#createShoppingList'); button.disabled = true;
     try { renderShoppingList(await api('/api/shopping-lists', { method:'POST', body:JSON.stringify({ items, source_text:input.value, list_date:document.querySelector('#demandTextDate').value }) })); document.querySelector('#shoppingListDialog').showModal(); }
     catch (error) { alert(error.message); } finally { button.disabled = false; }

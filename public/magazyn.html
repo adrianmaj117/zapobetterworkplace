@@ -158,7 +158,7 @@
         <div class="demand-preview-head"><strong>Pozycje z opisu</strong><button type="button" id="addDemandTextRow" class="small-btn">＋ Dodaj pozycję</button></div>
         <div id="demandTextRows"></div>
         <section id="demandShortages" class="demand-shortages" hidden></section>
-        <div class="form-actions"><button type="button" id="createShoppingList" class="button ghost" hidden>☷ Utwórz listę zakupów</button></div>
+        <div class="form-actions"><button type="button" id="createShoppingList" class="button ghost" hidden>↻ Odśwież listę zakupów</button></div>
         <label>Hasło zatwierdzające<input id="demandTextPassword" type="password" inputmode="numeric" placeholder="Wpisz hasło"></label>
       </div>
       <div class="form-actions"><button type="button" id="cancelDemandText" class="button ghost">Anuluj</button><button id="applyDemandText" type="submit" class="button primary" disabled>Zatwierdź i odejmij</button></div>
@@ -167,9 +167,9 @@
   <dialog id="shoppingListDialog" class="demand-dialog shopping-list-dialog">
     <form method="dialog">
       <div class="modal-head"><h2>Lista zakupów</h2><button type="button" id="closeShoppingList" class="icon-btn">×</button></div>
-      <p class="demand-intro">Produkty, których brakuje do realizacji ostatniego porównanego zapotrzebowania.</p>
+      <p class="demand-intro">Bieżąca lista produktów, których brakuje po ostatnim porównaniu. Aby utworzyć nową listę, wklej nowy opis i kliknij „Odśwież listę zakupów”.</p>
       <div id="shoppingListContent" class="shopping-list-content"></div>
-      <div class="form-actions"><button type="button" id="openDemandTextFromShopping" class="button ghost">Wklej opis zapotrzebowania</button><button type="button" id="printShoppingList" class="button primary" hidden>Drukuj / zapisz PDF</button><button type="button" id="closeShoppingListBottom" class="button ghost">Zamknij</button></div>
+      <div class="form-actions"><button type="button" id="openDemandTextFromShopping" class="button ghost">Wklej nowe zapotrzebowanie</button><button type="button" id="printShoppingList" class="button primary" hidden>Drukuj / zapisz PDF</button><button type="button" id="closeShoppingListBottom" class="button ghost">Zamknij</button></div>
     </form>
   </dialog>
   <dialog id="manualSelectDialog" class="demand-dialog manual-select-dialog">

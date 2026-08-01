@@ -333,10 +333,12 @@ app.post('/api/shopping-lists', (req, res) => {
     weight: String(item.weight || '').trim(), required_quantity: Number(item.required_quantity), available_quantity: Number(item.available_quantity),
     missing_quantity: Number(item.missing_quantity), unit: String(item.unit || 'szt.').trim() || 'szt.'
   })).filter(item => item.name && validNumber(item.required_quantity) && item.required_quantity > 0 && validNumber(item.available_quantity) && item.available_quantity >= 0 && validNumber(item.missing_quantity) && item.missing_quantity > 0);
-  if (!items.length) return res.status(400).json({ error: 'Nie ma produktów do dodania do listy zakupów.' });
   db.exec('BEGIN');
   try {
     const listDate = /^\d{4}-\d{2}-\d{2}$/.test(String(req.body?.list_date || '')) ? req.body.list_date : new Date().toISOString().slice(0, 10);
+    // Lista zakupów przedstawia wyłącznie bieżące porównanie — także wtedy, gdy braków nie ma.
+    db.prepare('DELETE FROM shopping_list_items').run();
+    db.prepare('DELETE FROM shopping_lists').run();
     const list = db.prepare('INSERT INTO shopping_lists (source_text, list_date) VALUES (?, ?)').run(String(req.body?.source_text || '').slice(0, 50000), listDate);
     const add = db.prepare('INSERT INTO shopping_list_items (shopping_list_id, product_id, name, category, brand, weight, required_quantity, available_quantity, missing_quantity, unit) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
     items.forEach(item => add.run(list.lastInsertRowid, item.product_id, item.name, item.category, item.brand, item.weight, item.required_quantity, item.available_quantity, item.missing_quantity, item.unit));
