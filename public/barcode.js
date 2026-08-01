@@ -7,7 +7,7 @@
   const status = document.querySelector('#barcodeStatus');
   const result = document.querySelector('#barcodeResult');
   const addMissing = document.querySelector('#barcodeAddMissing');
-  let stream = null, detector = null, timer = null, currentCode = '';
+  let stream = null, detector = null, timer = null, currentCode = '', zxingControls = null;
 
   const cleanCode = value => String(value || '').trim().replace(/[^0-9A-Za-z-]/g, '').toUpperCase();
   const escapeHtml = value => String(value || '').replace(/[&<>"']/g, character => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[character]));
@@ -16,6 +16,7 @@
 
   function stopCamera() {
     if (timer) { clearTimeout(timer); timer = null; }
+    if (zxingControls) { try { zxingControls.stop(); } catch (_) {} zxingControls = null; }
     if (stream) { stream.getTracks().forEach(track => track.stop()); stream = null; }
     video.srcObject = null;
   }
@@ -47,11 +48,26 @@
     } catch (_) { /* kolejna klatka może być już czytelna */ }
     timer = setTimeout(scanFrame, 180);
   }
-  async function startCamera() {
-    if (!('BarcodeDetector' in window)) {
-      status.textContent = 'Ta przeglądarka nie obsługuje skanowania aparatem. Wpisz kod ręcznie lub otwórz magazyn w Chrome na telefonie.';
+  async function startWithZxing() {
+    if (!window.ZXingBrowser?.BrowserMultiFormatReader) {
+      status.textContent = 'Nie udało się wczytać skanera. Sprawdź połączenie z internetem albo wpisz kod ręcznie.';
       return;
     }
+    try {
+      stopCamera();
+      status.textContent = 'Uruchamiam aparat…';
+      const reader = new window.ZXingBrowser.BrowserMultiFormatReader();
+      zxingControls = await reader.decodeFromConstraints({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false }, video, (scanResult) => {
+        if (scanResult?.getText()) lookup(scanResult.getText());
+      });
+      status.textContent = 'Skanowanie trwa — ustaw kod kreskowy w ramce.';
+    } catch (error) {
+      stopCamera();
+      status.textContent = error.name === 'NotAllowedError' ? 'Brak zgody na aparat. Zezwól na dostęp do aparatu w przeglądarce.' : 'Nie udało się uruchomić aparatu. Możesz wpisać kod ręcznie.';
+    }
+  }
+  async function startCamera() {
+    if (!('BarcodeDetector' in window)) return startWithZxing();
     try {
       stopCamera();
       const wanted = ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'itf'];
@@ -83,7 +99,7 @@
     insertCode();
   }
 
-  openButton.addEventListener('click', () => { reset(); dialog.showModal(); });
+  openButton.addEventListener('click', () => { reset(); dialog.showModal(); startCamera(); });
   document.querySelector('#startBarcodeCamera').addEventListener('click', startCamera);
   document.querySelector('#findBarcodeManual').addEventListener('click', () => lookup(manual.value));
   manual.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); lookup(manual.value); } });
