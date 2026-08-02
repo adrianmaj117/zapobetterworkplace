@@ -61,6 +61,14 @@ if (!db.prepare("PRAGMA table_info(products)").all().some(column => column.name 
   db.exec('ALTER TABLE products ADD COLUMN barcode TEXT');
 }
 
+// Kod potwierdzony dla dokładnego wariantu: Sante FIT kakaowe 50 g.
+// Uzupełniamy go tylko wtedy, gdy przy produkcie nie zapisano jeszcze kodu.
+db.prepare(`UPDATE products SET barcode=?, updated_at=CURRENT_TIMESTAMP
+  WHERE name=? AND brand=? AND weight_value=? AND weight_unit=?
+    AND COALESCE(barcode, '')=''`).run(
+  '5900617036728', 'Ciasteczka zbożowe bez cukru kakaowe 50g, Sante', 'Sante', 50, 'g'
+);
+
 // Telefon zapisuje zdjęcia jako dane obrazu. Domyślny limit Expressa (100 KB)
 // był zbyt mały, dlatego pozwalamy na bezpieczne zdjęcia do 15 MB.
 db.exec(`CREATE TABLE IF NOT EXISTS app_settings (

@@ -7,7 +7,7 @@
   const status = document.querySelector('#barcodeStatus');
   const result = document.querySelector('#barcodeResult');
   const addMissing = document.querySelector('#barcodeAddMissing');
-  let stream = null, detector = null, timer = null, currentCode = '', zxingControls = null;
+  let stream = null, detector = null, timer = null, currentCode = '', zxingControls = null, captureTarget = '';
 
   const cleanCode = value => String(value || '').trim().replace(/[^0-9A-Za-z-]/g, '').toUpperCase();
   const escapeHtml = value => String(value || '').replace(/[&<>"']/g, character => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[character]));
@@ -20,9 +20,20 @@
     if (stream) { stream.getTracks().forEach(track => track.stop()); stream = null; }
     video.srcObject = null;
   }
-  function reset() {
+  function reset(keepCaptureTarget = false) {
     stopCamera(); currentCode = ''; manual.value = ''; result.hidden = true; result.innerHTML = ''; addMissing.hidden = true;
     status.textContent = 'Aparat jest wyłączony.';
+    if (!keepCaptureTarget) captureTarget = '';
+  }
+  function saveScannedCode(code) {
+    const input = document.querySelector(`#${captureTarget}`);
+    if (!input) { captureTarget = ''; return false; }
+    input.value = code;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    stopCamera();
+    dialog.close();
+    captureTarget = '';
+    return true;
   }
   function showProduct(product) {
     result.hidden = false; addMissing.hidden = true;
@@ -32,6 +43,7 @@
     const code = cleanCode(value);
     if (!code) { status.textContent = 'Wpisz kod kreskowy albo włącz aparat.'; return; }
     currentCode = code; manual.value = code; stopCamera();
+    if (captureTarget && saveScannedCode(code)) return;
     const product = all.find(item => cleanCode(item.barcode) === code);
     if (product) { status.textContent = `Znaleziono kod: ${code}`; showProduct(product); return; }
     status.textContent = `Nie ma artykułu z kodem ${code} w magazynie.`;
@@ -99,12 +111,32 @@
     insertCode();
   }
 
-  openButton.addEventListener('click', () => { reset(); dialog.showModal(); startCamera(); });
+  function openLookup() {
+    reset();
+    dialog.querySelector('h2').textContent = 'Znajdź artykuł kodem';
+    dialog.showModal();
+    startCamera();
+  }
+  function openCapture(targetId) {
+    captureTarget = targetId;
+    reset(true);
+    dialog.querySelector('h2').textContent = 'Dodaj kod kreskowy';
+    dialog.showModal();
+    startCamera();
+  }
+
+  openButton.addEventListener('click', openLookup);
+  document.addEventListener('click', event => {
+    const button = event.target.closest('[data-scan-barcode-for]');
+    if (!button) return;
+    event.preventDefault();
+    openCapture(button.dataset.scanBarcodeFor);
+  });
   document.querySelector('#startBarcodeCamera').addEventListener('click', startCamera);
   document.querySelector('#findBarcodeManual').addEventListener('click', () => lookup(manual.value));
   manual.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); lookup(manual.value); } });
   result.addEventListener('click', event => { const button = event.target.closest('[data-open-product]'); if (button) openProduct(button.dataset.openProduct); });
   addMissing.addEventListener('click', addProductWithCode);
   ['closeBarcode', 'cancelBarcode'].forEach(id => document.querySelector(`#${id}`).addEventListener('click', () => dialog.close()));
-  dialog.addEventListener('close', stopCamera);
+  dialog.addEventListener('close', () => { stopCamera(); captureTarget = ''; });
 })();
