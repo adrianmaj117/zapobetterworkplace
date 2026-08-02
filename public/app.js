@@ -1,3 +1,4 @@
+(()=>{const icon=document.createElement('link');icon.rel='icon';icon.type='image/png';icon.sizes='192x192';icon.href='/assets/daily-fruits-logo.png?v=3';document.head.append(icon);const touch=document.createElement('link');touch.rel='apple-touch-icon';touch.href='/assets/daily-fruits-logo.png?v=3';document.head.append(touch)})();
 const $=s=>document.querySelector(s);let products=[],importedItems=[],moveType='add',token=localStorage.getItem('zapoToken')||'';
 const fmt=new Intl.NumberFormat('pl-PL',{maximumFractionDigits:2}),dateFmt=new Intl.DateTimeFormat('pl-PL',{day:'numeric',month:'long',year:'numeric'});
 const api=async(url,opt={})=>{const r=await fetch(url,{...opt,headers:{'Content-Type':'application/json','x-session-token':token,...opt.headers}});if(!r.ok){const error=new Error((await r.json().catch(()=>({}))).error||'Wystąpił błąd.');error.status=r.status;throw error}return r.status===204?null:r.json()};
