@@ -374,6 +374,15 @@ app.post('/api/shopping-lists', (req, res) => {
   } catch (error) { db.exec('ROLLBACK'); throw error; }
 });
 
+// Usunięcie pojedynczej, niepotrzebnej pozycji z bieżącej listy zakupów.
+app.delete('/api/shopping-lists/items/:id', (req, res) => {
+  const id = Number(req.params.id);
+  const item = db.prepare('SELECT id FROM shopping_list_items WHERE id=?').get(id);
+  if (!item) return res.status(404).json({ error: 'Nie znaleziono tej pozycji na liście zakupów.' });
+  db.prepare('DELETE FROM shopping_list_items WHERE id=?').run(id);
+  res.status(204).end();
+});
+
 db.exec(`CREATE TABLE IF NOT EXISTS category_images (
   category TEXT PRIMARY KEY,
   image_data TEXT NOT NULL,

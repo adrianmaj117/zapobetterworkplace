@@ -84,7 +84,7 @@
     const content = document.querySelector('#shoppingListContent'), print = document.querySelector('#printShoppingList');
     if (!list) { content.innerHTML = '<p class="demand-status">Nie ma jeszcze porównanego zapotrzebowania. Wklej nowy opis, aby utworzyć listę.</p>'; print.hidden = true; return; }
     if (!list.items?.length) { content.innerHTML = `<p class="shopping-list-date">Na dzień: ${escapeHtml(list.list_date || list.created_at || '')}</p><p class="demand-status">✓ W bieżącym zapotrzebowaniu nie ma produktów do kupienia.</p>`; print.hidden = true; return; }
-    content.innerHTML = `<p class="shopping-list-date">Na dzień: ${escapeHtml(list.list_date || list.created_at || '')}</p>${list.items.map(item => `<article><span><b>${escapeHtml(item.name)}</b><small>${escapeHtml(item.category)}${item.brand ? ` · ${escapeHtml(item.brand)}` : ''}${item.weight ? ` · ${escapeHtml(item.weight)}` : ''}</small></span><span>stan: ${item.available_quantity} ${escapeHtml(item.unit)}<b>do kupienia: ${item.missing_quantity} ${escapeHtml(item.unit)}</b></span></article>`).join('')}`;
+    content.innerHTML = `<p class="shopping-list-date">Na dzień: ${escapeHtml(list.list_date || list.created_at || '')}</p>${list.items.map(item => `<article><span><b>${escapeHtml(item.name)}</b><small>${escapeHtml(item.category)}${item.brand ? ` · ${escapeHtml(item.brand)}` : ''}${item.weight ? ` · ${escapeHtml(item.weight)}` : ''}</small></span><span>stan: ${item.available_quantity} ${escapeHtml(item.unit)}<b>do kupienia: ${item.missing_quantity} ${escapeHtml(item.unit)}</b></span><button type="button" class="shopping-remove" data-shopping-remove="${item.id}" title="Usuń z tej listy" aria-label="Usuń ${escapeHtml(item.name)} z listy zakupów">×</button></article>`).join('')}`;
     print.hidden = false; print.dataset.list = JSON.stringify(list);
   }
   function printShoppingList(list) {
@@ -113,6 +113,14 @@
   ['closeDemandText', 'cancelDemandText'].forEach(id => document.querySelector(`#${id}`).addEventListener('click', () => dialog.close()));
   ['closeShoppingList', 'closeShoppingListBottom'].forEach(id => document.querySelector(`#${id}`).addEventListener('click', () => document.querySelector('#shoppingListDialog').close()));
   document.querySelector('#shoppingList').addEventListener('click', async () => { try { renderShoppingList(await api('/api/shopping-lists/latest')); document.querySelector('#shoppingListDialog').showModal(); } catch (error) { alert(error.message); } });
+  document.querySelector('#shoppingListContent').addEventListener('click', async event => {
+    const button = event.target.closest('[data-shopping-remove]');
+    if (!button) return;
+    try {
+      await api(`/api/shopping-lists/items/${button.dataset.shoppingRemove}`, { method:'DELETE' });
+      renderShoppingList(await api('/api/shopping-lists/latest'));
+    } catch (error) { alert(error.message); }
+  });
   document.querySelector('#openDemandTextFromShopping').addEventListener('click', () => { document.querySelector('#shoppingListDialog').close(); document.querySelector('#demandText').click(); });
   document.querySelector('#printShoppingList').addEventListener('click', event => { const list = JSON.parse(event.currentTarget.dataset.list || 'null'); if (list) printShoppingList(list); });
   input.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(() => buildPreview(input.value), 250); });
