@@ -16,17 +16,17 @@
   };
   const excludedFromShopping = (category, text = '') => {
     const group = normalize(category);
-    return ['owoce', 'bulki z katowic', 'inne'].includes(group) || ignoredDemandLine(`${category} ${text}`);
+    return group === 'inne' || group.includes('owoce') || group.includes('bulki z katowic') || ignoredDemandLine(`${category} ${text}`);
   };
   const productBrand = item => item.brand || (item.category === 'Bakalie' ? 'HEBAR' : 'Pozostałe');
   const productSize = item => item.weight_value ? `${item.weight_value} ${item.weight_unit}` : 'bez gramatury';
   const productLabel = item => `${item.name} — ${productBrand(item)} · ${productSize(item)} (stan: ${item.quantity} ${item.unit})`;
-  const categoryOptions = selected => [...new Set([...cats, ...all.map(item => item.category), 'Nabiał', 'Owoce', 'Zioła', 'Bułki z Katowic', 'Inne'])].sort((a, b) => a.localeCompare(b, 'pl')).map(category => `<option ${category === selected ? 'selected' : ''}>${escapeHtml(category)}</option>`).join('');
+  const categoryOptions = selected => [...new Set([...cats, ...all.map(item => item.category), 'Nabiał', 'Owoce i Warzywa', 'Zioła', 'Bułki z KATOWIC', 'Inne'])].sort((a, b) => a.localeCompare(b, 'pl')).map(category => `<option ${category === selected ? 'selected' : ''}>${escapeHtml(category)}</option>`).join('');
   function suggestedCategory(line) {
     const value = normalize(line);
     const rules = [
-      ['Bułki z Katowic', ['bulka', 'bulki', 'katowic']], ['Soki', ['sok', 'pomidorow']],
-      ['Owoce', ['owoce', 'banan', 'winogron', 'kiwi', 'cytryn', 'jablko', 'gruszk', 'pomarancz']], ['Zioła', ['ziola', 'bazyl', 'mieta', 'pietruszk', 'kolendr', 'koperek', 'rozmaryn']],
+      ['Bułki z KATOWIC', ['bulka', 'bulki', 'katowic']], ['Soki i Napoje', ['sok', 'pomidorow']],
+      ['Owoce i Warzywa', ['owoce', 'banan', 'winogron', 'kiwi', 'cytryn', 'jablko', 'gruszk', 'pomarancz']], ['Zioła', ['ziola', 'bazyl', 'mieta', 'pietruszk', 'kolendr', 'koperek', 'rozmaryn']],
       ['Nabiał', ['mleko', 'jogurt', 'ser ', 'masl', 'smiet']],
       ['Smoothie', ['smoothie', 'rokitnik', 'moringa', 'baobab']], ['Bakalie', ['orzech', 'migd', 'daktyl', 'zurawin', 'bakal']],
       ['Płatki / Musli / Granola', ['platki', 'musli', 'granola', 'corn flakes']], ['Ciastka i batony', ['baton', 'ciastk', 'crunchy']],
@@ -37,15 +37,17 @@
     return rules.find(([, words]) => words.some(word => value.includes(word)))?.[0] || 'Inne';
   }
   const proposedName = line => String(line || '').replace(/(?:\s|^)(\d+(?:[,.]\d+)?)(?:\s*(?:szt\.?|opak\.?|op\.?|x))?\s*$/i, '').trim() || 'Nowy produkt';
-  const productOptions = selected => {
-    const categories = [...new Set(all.map(item => item.category))].sort((a, b) => a.localeCompare(b, 'pl'));
+  const productOptions = (selected, filterCategory = '') => {
+    const categories = [...new Set(all.filter(item => !filterCategory || item.category === filterCategory).map(item => item.category))].sort((a, b) => a.localeCompare(b, 'pl'));
     return `<option value="">Dopasuj produkt z magazynu…</option>${categories.map(category => `<optgroup label="${escapeHtml(category)}">${all.filter(item => item.category === category).sort((a, b) => a.name.localeCompare(b.name, 'pl')).map(item => `<option value="${item.id}" ${Number(selected) === item.id ? 'selected' : ''}>${escapeHtml(productLabel(item))}</option>`).join('')}</optgroup>`).join('')}`;
   };
   function addRow(productId = '', quantity = '', source = '') {
     const missing = !productId && source;
+    const selectedProduct = all.find(item => item.id === Number(productId));
+    const selectedCategory = selectedProduct?.category || suggestedCategory(source);
     const row = document.createElement('div'); row.className = `demand-row${missing ? ' is-missing' : ''}`;
-    const quickAdd = missing ? `<div class="missing-product-panel"><strong>Brak produktu w bazie</strong><span>Wybierz kategorię i dodaj go ze stanem 0.</span><input class="missing-name" value="${escapeHtml(proposedName(source))}" aria-label="Nazwa nowego produktu"><select class="missing-category" aria-label="Kategoria nowego produktu">${categoryOptions(suggestedCategory(source))}</select><button type="button" class="small-btn add-missing-product">＋ Dodaj do bazy</button></div>` : '';
-    row.innerHTML = `<input class="demand-raw" aria-label="Wiersz opisu" value="${escapeHtml(source)}" placeholder="Wiersz z opisu"><select class="demand-product" aria-label="Produkt">${productOptions(productId)}</select><input class="demand-quantity" aria-label="Ilość" type="number" min="0.01" step="any" value="${escapeHtml(quantity)}" placeholder="Ilość"><button type="button" class="demand-remove" title="Usuń pozycję" aria-label="Usuń pozycję">×</button>${quickAdd}`;
+    const quickAdd = missing ? `<div class="missing-product-panel"><strong>Brak produktu w bazie</strong><span>Wybierz kategorię i dodaj go ze stanem 0.</span><input class="missing-name" value="${escapeHtml(proposedName(source))}" aria-label="Nazwa nowego produktu"><select class="missing-category" aria-label="Kategoria nowego produktu">${categoryOptions(selectedCategory)}</select><button type="button" class="small-btn add-missing-product">＋ Dodaj do bazy</button></div>` : '';
+    row.innerHTML = `<input class="demand-raw" aria-label="Wiersz opisu" value="${escapeHtml(source)}" placeholder="Wiersz z opisu"><select class="demand-category" aria-label="Kategoria">${categoryOptions(selectedCategory)}</select><select class="demand-product" aria-label="Produkt">${productOptions(productId, selectedCategory)}</select><input class="demand-quantity" aria-label="Ilość" type="number" min="0.01" step="any" value="${escapeHtml(quantity)}" placeholder="Ilość"><button type="button" class="demand-remove" title="Usuń pozycję" aria-label="Usuń pozycję">×</button>${quickAdd}`;
     rows.append(row);
   }
   function score(line, item) {
@@ -65,13 +67,13 @@
       const quantity = Number(row.querySelector('.demand-quantity').value);
       if (!Number.isFinite(quantity) || quantity <= 0) return;
       const name = product?.name || row.querySelector('.missing-name')?.value.trim() || proposedName(row.querySelector('.demand-raw').value);
-      const category = product?.category || row.querySelector('.missing-category')?.value || suggestedCategory(row.querySelector('.demand-raw').value);
+      const category = product?.category || row.querySelector('.demand-category')?.value || row.querySelector('.missing-category')?.value || suggestedCategory(row.querySelector('.demand-raw').value);
       if (excludedFromShopping(category, `${row.querySelector('.demand-raw').value} ${name}`)) return;
       const key = product ? `product:${product.id}` : `missing:${normalize(name)}:${category}`;
       const entry = grouped.get(key) || { product_id:product?.id || null, name, category, brand:product ? productBrand(product) : '', weight:product ? productSize(product) : '', unit:product?.unit || 'szt.', required_quantity:0, available_quantity:product?.quantity || 0 };
       entry.required_quantity += quantity; grouped.set(key, entry);
     });
-    return [...grouped.values()].map(item => ({ ...item, missing_quantity:Math.max(0, item.required_quantity - item.available_quantity) })).filter(item => item.missing_quantity > 0).sort((a, b) => (a.category === 'Owoce' ? 0 : 1) - (b.category === 'Owoce' ? 0 : 1) || a.category.localeCompare(b.category, 'pl') || a.name.localeCompare(b.name, 'pl'));
+    return [...grouped.values()].map(item => ({ ...item, missing_quantity:Math.max(0, item.required_quantity - item.available_quantity) })).filter(item => item.missing_quantity > 0).sort((a, b) => (a.category === 'Owoce i Warzywa' ? 0 : 1) - (b.category === 'Owoce i Warzywa' ? 0 : 1) || a.category.localeCompare(b.category, 'pl') || a.name.localeCompare(b.name, 'pl'));
   }
   function renderShortages() {
     const box = document.querySelector('#demandShortages'), create = document.querySelector('#createShoppingList'), items = comparison();
@@ -133,18 +135,32 @@
   });
   function clearMissing(row) { row.classList.remove('is-missing'); row.querySelector('.missing-product-panel')?.remove(); }
   rows.addEventListener('input', event => { if (event.target.closest('.demand-quantity')) renderShortages(); });
-  rows.addEventListener('change', event => { if (event.target.closest('.demand-product')?.value) clearMissing(event.target.closest('.demand-row')); renderShortages(); });
+  rows.addEventListener('change', event => {
+    const row = event.target.closest('.demand-row');
+    if (event.target.closest('.demand-category')) {
+      row.querySelector('.demand-product').innerHTML = productOptions('', event.target.value);
+      const missingCategory = row.querySelector('.missing-category');
+      if (missingCategory) missingCategory.innerHTML = categoryOptions(event.target.value);
+    }
+    const product = event.target.closest('.demand-product');
+    if (product?.value) {
+      const found = all.find(item => item.id === Number(product.value));
+      if (found) row.querySelector('.demand-category').value = found.category;
+      clearMissing(row);
+    }
+    renderShortages();
+  });
   rows.addEventListener('click', async event => {
     if (event.target.closest('.demand-remove')) { event.target.closest('.demand-row').remove(); renderShortages(); return; }
     const button = event.target.closest('.add-missing-product'); if (!button) return;
     const row = button.closest('.demand-row'), name = row.querySelector('.missing-name').value.trim(), category = row.querySelector('.missing-category').value;
     if (!name) return alert('Wpisz nazwę produktu, który chcesz dodać.');
     const existing = all.find(item => normalize(item.name) === normalize(name) && item.category === category);
-    if (existing) { row.querySelector('.demand-product').innerHTML = productOptions(existing.id); clearMissing(row); renderShortages(); return; }
+    if (existing) { row.querySelector('.demand-category').value = existing.category; row.querySelector('.demand-product').innerHTML = productOptions(existing.id, existing.category); clearMissing(row); renderShortages(); return; }
     button.disabled = true; button.textContent = 'Dodawanie…';
     try {
       const created = await api('/api/products', { method:'POST', body:JSON.stringify({ name, category, quantity:0, unit:'szt.', min_quantity:0, notes:'Dodano z zapotrzebowania: brak w magazynie' }) });
-      all.push(created); row.querySelector('.demand-product').innerHTML = productOptions(created.id); clearMissing(row); renderShortages();
+      all.push(created); row.querySelector('.demand-category').value = created.category; row.querySelector('.demand-product').innerHTML = productOptions(created.id, created.category); clearMissing(row); renderShortages();
       status.textContent = `Dodano „${created.name}” do kategorii „${created.category}” ze stanem 0. Możesz teraz kontynuować zapotrzebowanie.`;
     } catch (error) { alert(error.message); button.disabled = false; button.textContent = '＋ Dodaj do bazy'; }
   });
