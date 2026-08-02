@@ -92,8 +92,7 @@
       <div class="modal-head"><h2>Karta SELGROS</h2><button type="button" id="closeSelgros" class="icon-btn">×</button></div>
       <section class="selgros-card" aria-label="Karta SELGROS">
         <strong>SELGROS</strong>
-        <div class="selgros-barcode" aria-label="Kod karty 8112402006"></div>
-        <b>8 112 402 006</b>
+        <svg id="selgrosBarcode" class="selgros-barcode" role="img" aria-label="Kod kreskowy karty 8112402006"></svg>
       </section>
       <p class="selgros-help">Pokaż tę kartę przy zakupach w SELGROS.</p>
       <div class="form-actions"><button type="button" id="closeSelgrosBottom" class="button primary">Zamknij</button></div>
@@ -228,8 +227,10 @@
   <script src="warehouse.js"></script>
   <script src="https://unpkg.com/@zxing/browser@0.1.5"></script>
   <script src="barcode.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
   <script>
     const selgrosDialog = document.querySelector('#selgrosDialog');
+    JsBarcode('#selgrosBarcode', '8112402006', { format: 'CODE128', displayValue: true, fontSize: 22, height: 105, margin: 18, lineColor: '#000', background: '#fff' });
     document.querySelector('#selgrosCard').onclick = () => selgrosDialog.showModal();
     ['closeSelgros', 'closeSelgrosBottom'].forEach(id => document.querySelector('#' + id).onclick = () => selgrosDialog.close());
   </script>
