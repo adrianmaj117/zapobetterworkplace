@@ -270,7 +270,9 @@
       if (state.level === 'category') [...tiles.querySelectorAll('[data-value]')].forEach(tile => {
         const value = tile.dataset.value;
         const exists = all.some(item => item.category === value) || savedPaths.some(path => path.level === 'category' && path.category === value);
-        if (!exists) tile.remove();
+        // Stałe kategorie z menu (np. Owoce i Warzywa) mają być dostępne
+        // także wtedy, gdy ich stan chwilowo wynosi zero.
+        if (!exists && !cats.includes(value)) tile.remove();
       });
       const present = [...tiles.querySelectorAll('[data-value]')].map(tile => tile.dataset.value);
       const choices = savedPaths.filter(path =>
