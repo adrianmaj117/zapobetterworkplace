@@ -126,7 +126,13 @@
   document.querySelector('#openDemandTextFromShopping').addEventListener('click', () => { document.querySelector('#shoppingListDialog').close(); document.querySelector('#demandText').click(); });
   document.querySelector('#printShoppingList').addEventListener('click', event => { const list = JSON.parse(event.currentTarget.dataset.list || 'null'); if (list) printShoppingList(list); });
   input.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(() => buildPreview(input.value), 250); });
-  document.querySelector('#addDemandTextRow').addEventListener('click', () => addRow());
+  function addManualDemandRow() {
+    addRow();
+    const row = rows.lastElementChild;
+    row.scrollIntoView({ behavior:'smooth', block:'nearest' });
+    row.querySelector('.demand-category')?.focus();
+  }
+  document.querySelectorAll('#addDemandTextRow, #addDemandTextRowBottom').forEach(button => button.addEventListener('click', addManualDemandRow));
   document.querySelector('#createShoppingList').addEventListener('click', async () => {
     const items = comparison();
     const button = document.querySelector('#createShoppingList'); button.disabled = true;
