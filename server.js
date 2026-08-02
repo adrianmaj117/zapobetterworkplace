@@ -206,8 +206,8 @@ function ensureFruitProducts() {
   const setting = 'default_fruit_products_2026_08_01';
   if (db.prepare('SELECT value FROM app_settings WHERE key=?').get(setting)) return 0;
   const names = ['Banan', 'Jabłko', 'Śliwka', 'Morela', 'Brzoskwinia', 'Nektarynka'];
-  const exists = db.prepare("SELECT id FROM products WHERE category='Owoce' AND name=? LIMIT 1");
-  const add = db.prepare("INSERT INTO products (name, category, brand, unit, quantity, min_quantity, weight_value, weight_unit, notes, updated_at) VALUES (?, 'Owoce', '', 'kg', 0, 0, NULL, NULL, '', CURRENT_TIMESTAMP)");
+  const exists = db.prepare("SELECT id FROM products WHERE category='Owoce i Warzywa' AND name=? LIMIT 1");
+  const add = db.prepare("INSERT INTO products (name, category, brand, unit, quantity, min_quantity, weight_value, weight_unit, notes, updated_at) VALUES (?, 'Owoce i Warzywa', '', 'kg', 0, 0, NULL, NULL, '', CURRENT_TIMESTAMP)");
   let added = 0;
   db.exec('BEGIN');
   try {
@@ -236,6 +236,17 @@ function productById(id) {
 
 function validNumber(value) {
   return typeof value === 'number' && Number.isFinite(value);
+}
+
+// Jedna, stała pisownia kategorii. Dzięki temu przypadkowo wpisana nazwa
+// (np. "Bułki z Katowic") nie tworzy drugi raz tego samego kafelka.
+function canonicalCategory(value) {
+  const raw = String(value || '').trim();
+  const comparable = raw.toLocaleLowerCase('pl-PL').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
+  if (comparable === 'bulki z katowic') return 'Bułki z KATOWIC';
+  if (comparable === 'owoce') return 'Owoce i Warzywa';
+  if (comparable === 'soki') return 'Soki i Napoje';
+  return raw || 'Inne';
 }
 function storedBrand(category, brand) {
   return brand === 'Pozostałe' || (category === 'Bakalie' && brand === 'HEBAR') ? '' : brand;
@@ -330,7 +341,7 @@ function isExcludedShoppingItem(item) {
   const normalize = value => String(value || '').toLocaleLowerCase('pl-PL').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
   const category = normalize(item.category);
   const text = normalize(`${item.name} ${item.category}`);
-  return ['owoce', 'bulki z katowic', 'inne'].includes(category) || text.includes('office box') || ['bajgiel', 'bagiel', 'bulka', 'ciabatta', 'bagietka', 'kanapk'].some(word => text.includes(word));
+  return category === 'inne' || category.includes('owoce') || category.includes('bulki z katowic') || text.includes('office box') || ['bajgiel', 'bagiel', 'bulka', 'ciabatta', 'bagietka', 'kanapk'].some(word => text.includes(word));
 }
 function shoppingListById(id) {
   const list = db.prepare('SELECT * FROM shopping_lists WHERE id=?').get(id);
@@ -378,6 +389,48 @@ db.exec(`CREATE TABLE IF NOT EXISTS inventory_paths (
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   UNIQUE(level, category, brand, weight_value, weight_unit)
 )`);
+
+// Trwałe uporządkowanie kategorii na istniejącym serwerze Railway.
+// Produkty są scalane, a nie kasowane: zachowujemy ilości, daty i zdjęcia.
+function applyCategoryCorrections() {
+  const setting = 'category_labels_2026_08_02';
+  if (db.prepare('SELECT value FROM app_settings WHERE key=?').get(setting)) return 0;
+  let changed = 0;
+  const pathExists = db.prepare(`SELECT id FROM inventory_paths
+    WHERE level=? AND category=? AND brand=?
+      AND COALESCE(weight_value, -1)=COALESCE(?, -1)
+      AND COALESCE(weight_unit, '')=COALESCE(?, '') LIMIT 1`);
+  db.exec('BEGIN');
+  try {
+    for (const row of db.prepare('SELECT DISTINCT category FROM products').all()) {
+      const next = canonicalCategory(row.category);
+      if (next !== row.category) changed += db.prepare('UPDATE products SET category=?, updated_at=CURRENT_TIMESTAMP WHERE category=?').run(next, row.category).changes;
+    }
+    for (const row of db.prepare('SELECT id, level, category, brand, weight_value, weight_unit FROM inventory_paths').all()) {
+      const next = canonicalCategory(row.category);
+      if (next === row.category) continue;
+      if (pathExists.get(row.level, next, row.brand, row.weight_value, row.weight_unit)) db.prepare('DELETE FROM inventory_paths WHERE id=?').run(row.id);
+      else db.prepare('UPDATE inventory_paths SET category=? WHERE id=?').run(next, row.id);
+    }
+    for (const row of db.prepare('SELECT category FROM category_images').all()) {
+      let next = row.category;
+      if (next.startsWith('category:')) next = `category:${canonicalCategory(next.slice(9))}`;
+      else if (next.startsWith('brand:') || next.startsWith('weight:')) {
+        const [kind, oldCategory, ...rest] = next.split(':');
+        next = `${kind}:${canonicalCategory(oldCategory)}:${rest.join(':')}`;
+      }
+      if (next === row.category) continue;
+      if (db.prepare('SELECT 1 FROM category_images WHERE category=?').get(next)) db.prepare('DELETE FROM category_images WHERE category=?').run(row.category);
+      else db.prepare('UPDATE category_images SET category=?, updated_at=CURRENT_TIMESTAMP WHERE category=?').run(next, row.category);
+    }
+    db.prepare("INSERT INTO app_settings (key, value) VALUES (?, 'true')").run(setting);
+    db.exec('COMMIT');
+  } catch (error) { db.exec('ROLLBACK'); throw error; }
+  return changed;
+}
+const correctedCategories = applyCategoryCorrections();
+if (correctedCategories) console.log(`Ujednolicono kategorie produktów: ${correctedCategories}.`);
+
 function moveTileImage(from, to) {
   if (from === to) return;
   const image = db.prepare('SELECT image_data FROM category_images WHERE category=?').get(from);
@@ -391,15 +444,16 @@ app.get('/api/category-images', (req, res) => res.json(db.prepare('SELECT catego
 app.get('/api/paths', (req, res) => res.json(db.prepare('SELECT level, category, brand, weight_value, weight_unit FROM inventory_paths ORDER BY id').all()));
 app.post('/api/paths', (req, res) => {
   const { level, category = '', brand = '', value = '' } = req.body;
-  const name = String(value).trim();
+  const name = level === 'category' ? canonicalCategory(value) : String(value).trim();
+  const parentCategory = canonicalCategory(category);
   if (!name || !['category','brand','weight'].includes(level)) return res.status(400).json({ error: 'Podaj nazwę nowej gałęzi.' });
   let row;
   if (level === 'category') row = { level, category:name, brand:'', weight_value:null, weight_unit:null };
-  else if (level === 'brand') row = { level, category, brand:name, weight_value:null, weight_unit:null };
+  else if (level === 'brand') row = { level, category:parentCategory, brand:name, weight_value:null, weight_unit:null };
   else {
     const match = name.match(/^(\d+(?:[.,]\d+)?)\s*(g|kg|ml|l)$/i);
     if (!match) return res.status(400).json({ error: 'Podaj gramaturę np. 400 ml.' });
-    row = { level, category, brand, weight_value:Number(match[1].replace(',', '.')), weight_unit:match[2].toLowerCase() };
+    row = { level, category:parentCategory, brand, weight_value:Number(match[1].replace(',', '.')), weight_unit:match[2].toLowerCase() };
   }
   db.prepare('INSERT OR IGNORE INTO inventory_paths (level, category, brand, weight_value, weight_unit) VALUES (?, ?, ?, ?, ?)').run(row.level, row.category, row.brand, row.weight_value, row.weight_unit);
   res.status(201).json(row);
@@ -435,7 +489,7 @@ app.post('/api/category-images', (req, res) => {
 
 app.patch('/api/paths/rename', (req, res) => {
   const { level, category = '', brand = '', weight_value = null, weight_unit = '', value = '' } = req.body;
-  const next = String(value).trim();
+  const next = level === 'category' ? canonicalCategory(value) : String(value).trim();
   const sourceBrand = storedBrand(category, brand);
   if (!next) return res.status(400).json({ error: 'Podaj nową nazwę.' });
   let result;
@@ -460,7 +514,7 @@ app.patch('/api/paths/rename', (req, res) => {
 
 app.patch('/api/paths/move', (req, res) => {
   const { level, category = '', brand = '', weight_value = null, weight_unit = '', target = '' } = req.body;
-  const destination = String(target).trim();
+  const destination = level === 'category' ? canonicalCategory(target) : String(target).trim();
   const sourceBrand = storedBrand(category, brand);
   if (!destination) return res.status(400).json({ error: 'Wybierz miejsce docelowe.' });
   let result;
@@ -481,14 +535,15 @@ app.patch('/api/paths/move', (req, res) => {
 app.patch('/api/paths/move-full', (req, res) => {
   const { level, category = '', brand = '', weight_value = null, weight_unit = '', target_category = '', target_brand = '', target_weight = '' } = req.body;
   const sourceBrand = storedBrand(category, brand);
+  const destinationCategory = canonicalCategory(target_category);
   const destinationBrand = target_brand === 'Pozostałe' ? '' : target_brand;
   const match = String(target_weight).match(/^(\d+(?:[.,]\d+)?)\s*(g|kg|ml|l)$/i);
-  if (!target_category || !target_brand || !match) return res.status(400).json({ error: 'Wybierz kategorię, firmę i gramaturę.' });
+  if (!destinationCategory || !target_brand || !match) return res.status(400).json({ error: 'Wybierz kategorię, firmę i gramaturę.' });
   const targetValue = Number(match[1].replace(',', '.')), targetUnit = match[2].toLowerCase();
   let result;
-  if (level === 'category') result = db.prepare('UPDATE products SET category=?, updated_at=CURRENT_TIMESTAMP WHERE category=?').run(target_category, category);
-  else if (level === 'brand') result = db.prepare("UPDATE products SET category=?, brand=?, updated_at=CURRENT_TIMESTAMP WHERE category=? AND (COALESCE(brand,'')=COALESCE(?, '') OR (?='' AND brand='Pozostałe'))").run(target_category, destinationBrand, category, sourceBrand, sourceBrand);
-  else if (level === 'weight') result = db.prepare("UPDATE products SET category=?, brand=?, weight_value=?, weight_unit=?, updated_at=CURRENT_TIMESTAMP WHERE category=? AND (COALESCE(brand,'')=COALESCE(?, '') OR (?='' AND brand='Pozostałe')) AND COALESCE(weight_value,-1)=COALESCE(?,-1) AND COALESCE(weight_unit,'')=COALESCE(?, '')").run(target_category, destinationBrand, targetValue, targetUnit, category, sourceBrand, sourceBrand, weight_value, weight_unit);
+  if (level === 'category') result = db.prepare('UPDATE products SET category=?, updated_at=CURRENT_TIMESTAMP WHERE category=?').run(destinationCategory, category);
+  else if (level === 'brand') result = db.prepare("UPDATE products SET category=?, brand=?, updated_at=CURRENT_TIMESTAMP WHERE category=? AND (COALESCE(brand,'')=COALESCE(?, '') OR (?='' AND brand='Pozostałe'))").run(destinationCategory, destinationBrand, category, sourceBrand, sourceBrand);
+  else if (level === 'weight') result = db.prepare("UPDATE products SET category=?, brand=?, weight_value=?, weight_unit=?, updated_at=CURRENT_TIMESTAMP WHERE category=? AND (COALESCE(brand,'')=COALESCE(?, '') OR (?='' AND brand='Pozostałe')) AND COALESCE(weight_value,-1)=COALESCE(?,-1) AND COALESCE(weight_unit,'')=COALESCE(?, '')").run(destinationCategory, destinationBrand, targetValue, targetUnit, category, sourceBrand, sourceBrand, weight_value, weight_unit);
   else return res.status(400).json({ error: 'Nieznany poziom ścieżki.' });
   res.json({ moved: result.changes });
 });
@@ -501,7 +556,7 @@ app.post('/api/products', (req, res) => {
   const normalizedBarcode = String(barcode || '').trim().replace(/[^0-9A-Za-z-]/g, '').toUpperCase();
   if (normalizedBarcode && db.prepare('SELECT id FROM products WHERE barcode=?').get(normalizedBarcode)) return res.status(409).json({ error: 'Ten kod kreskowy jest już przypisany do innego artykułu.' });
   const result = db.prepare(`INSERT INTO products (name, category, brand, unit, quantity, min_quantity, weight_value, weight_unit, expiration_date, received_date, image_data, notes, barcode, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`).run(name.trim(), category.trim() || 'Inne', brand.trim(), unit.trim() || 'szt.', quantity, min_quantity, validNumber(weight_value) && weight_value > 0 ? weight_value : null, weight_unit || null, parseExpiration(expiration_date), parseExpiration(received_date), image_data || null, notes.trim(), normalizedBarcode || null);
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`).run(name.trim(), canonicalCategory(category), brand.trim(), unit.trim() || 'szt.', quantity, min_quantity, validNumber(weight_value) && weight_value > 0 ? weight_value : null, weight_unit || null, parseExpiration(expiration_date), parseExpiration(received_date), image_data || null, notes.trim(), normalizedBarcode || null);
   if (quantity > 0) db.prepare("INSERT INTO movements (product_id, type, quantity, note) VALUES (?, 'add', ?, 'Stan początkowy')").run(result.lastInsertRowid, quantity);
   res.status(201).json(productById(result.lastInsertRowid));
 });
@@ -518,7 +573,7 @@ app.put('/api/products/:id', (req, res) => {
   db.exec('BEGIN');
   try {
     db.prepare(`UPDATE products SET name=?, category=?, brand=?, unit=?, quantity=?, min_quantity=?, weight_value=?, weight_unit=?, received_date=?, expiration_date=?, notes=?, barcode=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`)
-      .run(name.trim(), (category || 'Inne').trim(), brand.trim(), (unit || 'szt.').trim(), quantity, min_quantity, validNumber(weight_value) && weight_value > 0 ? weight_value : null, weight_unit || null, parseExpiration(received_date), parseExpiration(expiration_date), (notes || '').trim(), normalizedBarcode || null, id);
+      .run(name.trim(), canonicalCategory(category), brand.trim(), (unit || 'szt.').trim(), quantity, min_quantity, validNumber(weight_value) && weight_value > 0 ? weight_value : null, weight_unit || null, parseExpiration(received_date), parseExpiration(expiration_date), (notes || '').trim(), normalizedBarcode || null, id);
     const difference = quantity - existing.quantity;
     if (difference !== 0) db.prepare("INSERT INTO movements (product_id, type, quantity, note) VALUES (?, 'adjustment', ?, 'Edycja ilości')").run(id, Math.abs(difference));
     db.exec('COMMIT');

@@ -1,12 +1,20 @@
 @echo off
 setlocal
-echo Wysylanie aktualnej wersji do GitHub...
+title ZapoBetterWorkPlace - wysylanie zmian
+echo.
+echo =============================================
+echo  ZapoBetterWorkPlace - wysylanie zmian
+echo =============================================
+echo.
+echo Wysylanie aktualnej wersji na strone...
 git push origin main
 if errorlevel 1 (
   echo.
-  echo Wysylka nie udala sie. Zaloguj sie do GitHub w GitHub Desktop lub terminalu i uruchom ten plik ponownie.
+  echo Wysylka nie udala sie. Uruchom GitHub Desktop, zaloguj sie i kliknij ten plik ponownie.
 ) else (
   echo.
-  echo Gotowe. Railway rozpocznie automatyczne wdrozenie za chwile.
+  echo Gotowe. Strona zaktualizuje sie automatycznie za chwile.
+  echo Nie musisz niczego wpisywac w Railway.
 )
+echo.
 pause
