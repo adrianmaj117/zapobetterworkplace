@@ -36,7 +36,7 @@
     ];
     return rules.find(([, words]) => words.some(word => value.includes(word)))?.[0] || 'Inne';
   }
-  const proposedName = line => String(line || '').replace(/(?:\s|^)(\d+(?:[,.]\d+)?)(?:\s*(?:szt\.?|opak\.?|op\.?|x))?\s*$/i, '').trim() || 'Nowy produkt';
+  const proposedName = line => String(line || '').replace(/(?:\s|^)(\d+(?:[,.]\d+)?)(?:\s*(?:szt\.?|sztuk(?:a|i)?|opak\.?|opakowanie|op\.?|x|kg|kilogram(?:y|ow)?|l\b|lit(?:r|ry|row)?))?\s*$/i, '').replace(/[—–:-]\s*$/, '').trim() || 'Nowy produkt';
   const productOptions = (selected, filterCategory = '') => {
     const categories = [...new Set(all.filter(item => !filterCategory || item.category === filterCategory).map(item => item.category))].sort((a, b) => a.localeCompare(b, 'pl'));
     return `<option value="">Dopasuj produkt z magazynu…</option>${categories.map(category => `<optgroup label="${escapeHtml(category)}">${all.filter(item => item.category === category).sort((a, b) => a.name.localeCompare(b.name, 'pl')).map(item => `<option value="${item.id}" ${Number(selected) === item.id ? 'selected' : ''}>${escapeHtml(productLabel(item))}</option>`).join('')}</optgroup>`).join('')}`;
@@ -49,6 +49,23 @@
     const quickAdd = missing ? `<div class="missing-product-panel"><strong>Brak produktu w bazie</strong><span>Wybierz kategorię i dodaj go ze stanem 0.</span><input class="missing-name" value="${escapeHtml(proposedName(source))}" aria-label="Nazwa nowego produktu"><select class="missing-category" aria-label="Kategoria nowego produktu">${categoryOptions(selectedCategory)}</select><button type="button" class="small-btn add-missing-product">＋ Dodaj do bazy</button></div>` : '';
     row.innerHTML = `<input class="demand-raw" aria-label="Wiersz opisu" value="${escapeHtml(source)}" placeholder="Wiersz z opisu"><select class="demand-category" aria-label="Kategoria">${categoryOptions(selectedCategory)}</select><select class="demand-product" aria-label="Produkt">${productOptions(productId, selectedCategory)}</select><input class="demand-quantity" aria-label="Ilość" type="number" min="0.01" step="any" value="${escapeHtml(quantity)}" placeholder="Ilość"><button type="button" class="demand-remove" title="Usuń pozycję" aria-label="Usuń pozycję">×</button>${quickAdd}`;
     rows.append(row);
+    updateNameMatch(row);
+  }
+  function updateNameMatch(row) {
+    row.classList.remove('has-name-match', 'has-name-mismatch');
+    row.querySelector('.name-match-hint')?.remove();
+    const product = all.find(item => item.id === Number(row.querySelector('.demand-product')?.value));
+    const suggested = proposedName(row.querySelector('.demand-raw')?.value);
+    if (!product || !suggested || suggested === 'Nowy produkt') return;
+    const hint = document.createElement('div'); hint.className = 'name-match-hint';
+    if (normalize(product.name) === normalize(suggested)) {
+      row.classList.add('has-name-match');
+      hint.innerHTML = '<span>✓ Nazwa zgodna z magazynem</span>';
+    } else {
+      row.classList.add('has-name-mismatch');
+      hint.innerHTML = `<span>Uwaga: nazwa w zapotrzebowaniu różni się od nazwy w magazynie.</span><button type="button" class="small-btn use-demand-name">Użyj nazwy: ${escapeHtml(suggested)}</button>`;
+    }
+    row.append(hint);
   }
   const ignoredMatchWords = new Set(['szt', 'sztuka', 'sztuk', 'opakowanie', 'opak', 'produkt', 'office', 'box', 'bez', 'z', 'na', 'do', 'i', 'oraz']);
   const matchWords = value => normalize(value).split(' ').filter(word => word.length > 1 && !/^\d+$/.test(word) && !ignoredMatchWords.has(word));
@@ -160,7 +177,11 @@
     catch (error) { alert(error.message); } finally { button.disabled = false; }
   });
   function clearMissing(row) { row.classList.remove('is-missing'); row.querySelector('.missing-product-panel')?.remove(); }
-  rows.addEventListener('input', event => { if (event.target.closest('.demand-quantity')) renderShortages(); });
+  rows.addEventListener('input', event => {
+    const row = event.target.closest('.demand-row');
+    if (event.target.closest('.demand-quantity')) renderShortages();
+    if (event.target.closest('.demand-raw')) updateNameMatch(row);
+  });
   rows.addEventListener('change', event => {
     const row = event.target.closest('.demand-row');
     if (event.target.closest('.demand-category')) {
@@ -174,19 +195,31 @@
       if (found) row.querySelector('.demand-category').value = found.category;
       clearMissing(row);
     }
+    updateNameMatch(row);
     renderShortages();
   });
   rows.addEventListener('click', async event => {
     if (event.target.closest('.demand-remove')) { event.target.closest('.demand-row').remove(); renderShortages(); return; }
+    const renameButton = event.target.closest('.use-demand-name');
+    if (renameButton) {
+      const row = renameButton.closest('.demand-row'), product = all.find(item => item.id === Number(row.querySelector('.demand-product').value)), name = proposedName(row.querySelector('.demand-raw').value);
+      if (!product || !name || !confirm(`Zmienić nazwę w magazynie na „${name}”?`)) return;
+      renameButton.disabled = true;
+      try {
+        const updated = await api(`/api/products/${product.id}`, { method:'PUT', body:JSON.stringify({ ...product, name }) });
+        Object.assign(product, updated); updateNameMatch(row); renderShortages();
+      } catch (error) { alert(error.message); renameButton.disabled = false; }
+      return;
+    }
     const button = event.target.closest('.add-missing-product'); if (!button) return;
     const row = button.closest('.demand-row'), name = row.querySelector('.missing-name').value.trim(), category = row.querySelector('.missing-category').value;
     if (!name) return alert('Wpisz nazwę produktu, który chcesz dodać.');
     const existing = all.find(item => normalize(item.name) === normalize(name) && item.category === category);
-    if (existing) { row.querySelector('.demand-category').value = existing.category; row.querySelector('.demand-product').innerHTML = productOptions(existing.id, existing.category); clearMissing(row); renderShortages(); return; }
+    if (existing) { row.querySelector('.demand-category').value = existing.category; row.querySelector('.demand-product').innerHTML = productOptions(existing.id, existing.category); clearMissing(row); updateNameMatch(row); renderShortages(); return; }
     button.disabled = true; button.textContent = 'Dodawanie…';
     try {
       const created = await api('/api/products', { method:'POST', body:JSON.stringify({ name, category, quantity:0, unit:'szt.', min_quantity:0, notes:'Dodano z zapotrzebowania: brak w magazynie' }) });
-      all.push(created); row.querySelector('.demand-category').value = created.category; row.querySelector('.demand-product').innerHTML = productOptions(created.id, created.category); clearMissing(row); renderShortages();
+      all.push(created); row.querySelector('.demand-category').value = created.category; row.querySelector('.demand-product').innerHTML = productOptions(created.id, created.category); clearMissing(row); updateNameMatch(row); renderShortages();
       status.textContent = `Dodano „${created.name}” do kategorii „${created.category}” ze stanem 0. Możesz teraz kontynuować zapotrzebowanie.`;
     } catch (error) { alert(error.message); button.disabled = false; button.textContent = '＋ Dodaj do bazy'; }
   });
