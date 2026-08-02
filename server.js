@@ -43,10 +43,14 @@ db.exec(`
     product_id INTEGER NOT NULL,
     quantity REAL NOT NULL CHECK(quantity >= 0),
     expiration_date TEXT,
+    received_date TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY(product_id) REFERENCES products(id) ON DELETE CASCADE
   );
 `);
+if (!db.prepare("PRAGMA table_info(product_batches)").all().some(column => column.name === 'received_date')) {
+  db.exec('ALTER TABLE product_batches ADD COLUMN received_date TEXT');
+}
 if (!db.prepare("PRAGMA table_info(products)").all().some(column => column.name === 'weight_grams')) {
   db.exec('ALTER TABLE products ADD COLUMN weight_grams REAL');
 }
@@ -219,6 +223,8 @@ function ensureFruitProducts() {
 }
 const defaultFruitProducts = ensureFruitProducts();
 if (defaultFruitProducts) console.log(`Dodano domyślne owoce: ${defaultFruitProducts}.`);
+const historicalBatches = seedMissingProductBatches();
+if (historicalBatches) console.log(`Utworzono historyczne partie produktów: ${historicalBatches}.`);
 
 app.use(express.json({ limit: '15mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
@@ -260,6 +266,47 @@ function parseExpiration(value) {
   if (full) return `${full[3]}-${full[2]}-${full[1]}`;
   const month = String(value).match(/(\d{2})\.(\d{4})/);
   return month ? `${month[2]}-${month[1]}-01` : null;
+}
+
+// Produkt może mieć kilka dostaw z różnymi terminami. Główna data produktu
+// zawsze pokazuje najbliższy termin z partii, które jeszcze są na stanie.
+function syncProductExpiryFromBatches(productId) {
+  const nearest = db.prepare(`SELECT expiration_date FROM product_batches
+    WHERE product_id=? AND quantity > 0 AND expiration_date IS NOT NULL
+    ORDER BY expiration_date ASC, id ASC LIMIT 1`).get(productId);
+  db.prepare('UPDATE products SET expiration_date=?, updated_at=CURRENT_TIMESTAMP WHERE id=?')
+    .run(nearest ? nearest.expiration_date : null, productId);
+}
+
+// Przy wydaniu najpierw schodzi najstarsza partia. Partie bez daty zostają na końcu.
+function consumeProductBatches(productId, requestedQuantity) {
+  let remaining = Number(requestedQuantity);
+  if (!Number.isFinite(remaining) || remaining <= 0) return;
+  const batches = db.prepare(`SELECT id, quantity FROM product_batches
+    WHERE product_id=? AND quantity > 0
+    ORDER BY expiration_date IS NULL, expiration_date ASC, id ASC`).all(productId);
+  const update = db.prepare('UPDATE product_batches SET quantity=? WHERE id=?');
+  for (const batch of batches) {
+    if (remaining <= 0) break;
+    const used = Math.min(remaining, Number(batch.quantity));
+    update.run(Math.max(0, Number(batch.quantity) - used), batch.id);
+    remaining -= used;
+  }
+  syncProductExpiryFromBatches(productId);
+}
+
+// Dane dodane przed wprowadzeniem partii otrzymują jedną historyczną partię,
+// dzięki czemu od razu widać ich obecną ilość i termin.
+function seedMissingProductBatches() {
+  const products = db.prepare(`SELECT p.id, p.quantity, p.expiration_date, p.received_date
+    FROM products p
+    WHERE p.quantity > 0 AND NOT EXISTS (
+      SELECT 1 FROM product_batches b WHERE b.product_id=p.id
+    )`).all();
+  const insert = db.prepare(`INSERT INTO product_batches
+    (product_id, quantity, expiration_date, received_date) VALUES (?, ?, ?, ?)`);
+  products.forEach(product => insert.run(product.id, product.quantity, product.expiration_date || null, product.received_date || null));
+  return products.length;
 }
 
 function categoryFor(name) {
@@ -566,7 +613,11 @@ app.post('/api/products', (req, res) => {
   if (normalizedBarcode && db.prepare('SELECT id FROM products WHERE barcode=?').get(normalizedBarcode)) return res.status(409).json({ error: 'Ten kod kreskowy jest już przypisany do innego artykułu.' });
   const result = db.prepare(`INSERT INTO products (name, category, brand, unit, quantity, min_quantity, weight_value, weight_unit, expiration_date, received_date, image_data, notes, barcode, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`).run(name.trim(), canonicalCategory(category), brand.trim(), unit.trim() || 'szt.', quantity, min_quantity, validNumber(weight_value) && weight_value > 0 ? weight_value : null, weight_unit || null, parseExpiration(expiration_date), parseExpiration(received_date), image_data || null, notes.trim(), normalizedBarcode || null);
-  if (quantity > 0) db.prepare("INSERT INTO movements (product_id, type, quantity, note) VALUES (?, 'add', ?, 'Stan początkowy')").run(result.lastInsertRowid, quantity);
+  if (quantity > 0) {
+    db.prepare("INSERT INTO movements (product_id, type, quantity, note) VALUES (?, 'add', ?, 'Stan początkowy')").run(result.lastInsertRowid, quantity);
+    db.prepare('INSERT INTO product_batches (product_id, quantity, expiration_date, received_date) VALUES (?, ?, ?, ?)')
+      .run(result.lastInsertRowid, quantity, parseExpiration(expiration_date), parseExpiration(received_date));
+  }
   res.status(201).json(productById(result.lastInsertRowid));
 });
 
@@ -635,6 +686,12 @@ app.post('/api/products/:id/movement', (req, res) => {
   db.exec('BEGIN');
   try {
     db.prepare('UPDATE products SET quantity=?, updated_at=CURRENT_TIMESTAMP WHERE id=?').run(newQuantity, id);
+    if (increase) {
+      db.prepare('INSERT INTO product_batches (product_id, quantity, expiration_date, received_date) VALUES (?, ?, NULL, ?)')
+        .run(id, quantity, new Date().toISOString().slice(0, 10));
+    } else {
+      consumeProductBatches(id, quantity);
+    }
     db.prepare('INSERT INTO movements (product_id, type, quantity, note) VALUES (?, ?, ?, ?)').run(id, type, quantity, note.trim());
     db.exec('COMMIT');
   } catch (error) {
@@ -674,6 +731,7 @@ app.post('/api/demand/apply', (req, res) => {
       if (quantity <= 0) continue;
       snapshot.run(demandDate, product.id, product.quantity);
       update.run(quantity, product.id);
+      consumeProductBatches(product.id, quantity);
       movement.run(product.id, quantity, `Zapotrzebowanie${source_name ? `: ${String(source_name).slice(0, 120)}` : ''}`);
       addItem.run(run.lastInsertRowid, product.id, quantity);
     }
@@ -780,11 +838,13 @@ app.post('/api/products/:id/batches', (req, res) => {
   const product = productById(Number(req.params.id));
   const quantity = Number(req.body.quantity);
   const expiration = parseExpiration(req.body.expiration_date);
+  const received = parseExpiration(req.body.received_date);
   if (!product || !Number.isFinite(quantity) || quantity <= 0) return res.status(400).json({ error: 'Podaj prawidłową ilość partii.' });
   db.exec('BEGIN');
   try {
-    db.prepare('INSERT INTO product_batches (product_id, quantity, expiration_date) VALUES (?, ?, ?)').run(product.id, quantity, expiration);
+    db.prepare('INSERT INTO product_batches (product_id, quantity, expiration_date, received_date) VALUES (?, ?, ?, ?)').run(product.id, quantity, expiration, received);
     db.prepare('UPDATE products SET quantity=quantity+?, updated_at=CURRENT_TIMESTAMP WHERE id=?').run(quantity, product.id);
+    syncProductExpiryFromBatches(product.id);
     db.prepare("INSERT INTO movements (product_id, type, quantity, note) VALUES (?, 'add', ?, 'Nowa partia')").run(product.id, quantity);
     db.exec('COMMIT');
   } catch (error) { db.exec('ROLLBACK'); throw error; }
