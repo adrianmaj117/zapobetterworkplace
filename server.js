@@ -658,7 +658,6 @@ app.post('/api/demand/apply', (req, res) => {
   const ids = [...quantities.keys()], marks = ids.map(() => '?').join(',');
   const products = db.prepare(`SELECT * FROM products WHERE id IN (${marks})`).all(...ids);
   if (products.length !== ids.length) return res.status(400).json({ error: 'Jeden z wybranych produktów już nie istnieje.' });
-  for (const product of products) if (product.quantity < quantities.get(product.id)) return res.status(400).json({ error: `Za mało produktu „${product.name}”. Dostępne: ${product.quantity} ${product.unit}.` });
   db.exec('BEGIN');
   try {
     const run = db.prepare('INSERT INTO demand_runs (source_name, recognized_text, demand_date) VALUES (?, ?, ?)').run(String(source_name).slice(0, 255), String(recognized_text).slice(0, 50000), demandDate);
@@ -666,15 +665,27 @@ app.post('/api/demand/apply', (req, res) => {
     const movement = db.prepare("INSERT INTO movements (product_id, type, quantity, note) VALUES (?, 'demand', ?, ?)");
     const addItem = db.prepare('INSERT INTO demand_items (demand_run_id, product_id, quantity) VALUES (?, ?, ?)');
     const snapshot = db.prepare('INSERT OR IGNORE INTO demand_day_products (demand_date, product_id, opening_quantity) VALUES (?, ?, ?)');
+    const shortages = [];
     for (const product of products) {
-      const quantity = quantities.get(product.id);
+      const requested = quantities.get(product.id);
+      const quantity = Math.min(requested, product.quantity);
+      const missing = requested - quantity;
+      if (missing > 0) shortages.push({ product_id:product.id, name:product.name, category:product.category, brand:product.brand || '', weight:product.weight_value ? `${product.weight_value} ${product.weight_unit}` : '', required_quantity:requested, available_quantity:product.quantity, missing_quantity:missing, unit:product.unit });
+      if (quantity <= 0) continue;
       snapshot.run(demandDate, product.id, product.quantity);
       update.run(quantity, product.id);
       movement.run(product.id, quantity, `Zapotrzebowanie${source_name ? `: ${String(source_name).slice(0, 120)}` : ''}`);
       addItem.run(run.lastInsertRowid, product.id, quantity);
     }
+    // Niedobory z zatwierdzonego zapotrzebowania są od razu gotowe na liście zakupów.
+    db.prepare('DELETE FROM shopping_list_items').run();
+    db.prepare('DELETE FROM shopping_lists').run();
+    const visibleShortages = shortages.filter(item => !isExcludedShoppingItem(item));
+    const shoppingList = db.prepare('INSERT INTO shopping_lists (source_text, list_date) VALUES (?, ?)').run(String(recognized_text).slice(0, 50000), demandDate);
+    const addShoppingItem = db.prepare('INSERT INTO shopping_list_items (shopping_list_id, product_id, name, category, brand, weight, required_quantity, available_quantity, missing_quantity, unit) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    visibleShortages.forEach(item => addShoppingItem.run(shoppingList.lastInsertRowid, item.product_id, item.name, item.category, item.brand, item.weight, item.required_quantity, item.available_quantity, item.missing_quantity, item.unit));
     db.exec('COMMIT');
-    res.json({ applied: products.length, demand_id: Number(run.lastInsertRowid) });
+    res.json({ applied: products.filter(product => Math.min(quantities.get(product.id), product.quantity) > 0).length, demand_id: Number(run.lastInsertRowid), shortages:visibleShortages });
   } catch (error) { db.exec('ROLLBACK'); throw error; }
 });
 

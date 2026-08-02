@@ -179,7 +179,7 @@
     apply.disabled = true;
     try {
       const result = await api('/api/demand/apply', { method:'POST', body:JSON.stringify({ items, password, demand_date:document.querySelector('#demandTextDate').value, source_name:'Opis ręczny zapotrzebowania', recognized_text:input.value }) });
-      dialog.close(); alert(`Zapotrzebowanie zatwierdzone. Odjęto ${result.applied} ${result.applied === 1 ? 'produkt' : 'produkty'}.`); await load();
+      dialog.close(); alert(result.shortages?.length ? `Zapotrzebowanie zatwierdzone. Odjęto dostępne produkty, a ${result.shortages.length} brakujące pozycje dodano do listy zakupów.` : `Zapotrzebowanie zatwierdzone. Odjęto ${result.applied} ${result.applied === 1 ? 'produkt' : 'produkty'}.`); await load();
     } catch (error) { alert(error.message); } finally { apply.disabled = false; }
   });
 })();

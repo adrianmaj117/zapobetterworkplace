@@ -76,7 +76,7 @@
     try {
       const sourceName = selectedFiles().map(file => file.name).join(', ') || 'zdjęcia zapotrzebowania';
       const result = await api('/api/demand/apply', { method:'POST', body:JSON.stringify({ items, password, demand_date:document.querySelector('#demandDate').value, source_name:sourceName, recognized_text:recognizedText }) });
-      dialog.close(); alert(`Zapotrzebowanie zatwierdzone. Odjęto ${result.applied} ${result.applied === 1 ? 'produkt' : 'produkty'}.`); await load();
+      dialog.close(); alert(result.shortages?.length ? `Zapotrzebowanie zatwierdzone. Odjęto dostępne produkty, a ${result.shortages.length} brakujące pozycje dodano do listy zakupów.` : `Zapotrzebowanie zatwierdzone. Odjęto ${result.applied} ${result.applied === 1 ? 'produkt' : 'produkty'}.`); await load();
     } catch (error) { alert(error.message); } finally { apply.disabled = false; }
   });
 })();
