@@ -50,15 +50,35 @@
     row.innerHTML = `<input class="demand-raw" aria-label="Wiersz opisu" value="${escapeHtml(source)}" placeholder="Wiersz z opisu"><select class="demand-category" aria-label="Kategoria">${categoryOptions(selectedCategory)}</select><select class="demand-product" aria-label="Produkt">${productOptions(productId, selectedCategory)}</select><input class="demand-quantity" aria-label="Ilość" type="number" min="0.01" step="any" value="${escapeHtml(quantity)}" placeholder="Ilość"><button type="button" class="demand-remove" title="Usuń pozycję" aria-label="Usuń pozycję">×</button>${quickAdd}`;
     rows.append(row);
   }
+  const ignoredMatchWords = new Set(['szt', 'sztuka', 'sztuk', 'opakowanie', 'opak', 'produkt', 'office', 'box', 'bez', 'z', 'na', 'do', 'i', 'oraz']);
+  const matchWords = value => normalize(value).split(' ').filter(word => word.length > 1 && !/^\d+$/.test(word) && !ignoredMatchWords.has(word));
   function score(line, item) {
     const text = normalize(line), name = normalize(item.name); if (!text || !name) return 0;
-    if (text.includes(name)) return 100;
-    const words = name.split(' ').filter(word => word.length > 2);
-    return words.filter(word => text.includes(word)).length / Math.max(words.length, 1) * 80;
+    const requested = matchWords(text), product = matchWords(name); if (!requested.length || !product.length) return 0;
+    const common = product.filter(word => requested.includes(word));
+    const weightedCommon = common.reduce((sum, word) => sum + (word.length >= 6 ? 1.8 : 1), 0);
+    const weightedProduct = product.reduce((sum, word) => sum + (word.length >= 6 ? 1.8 : 1), 0);
+    let result = (weightedCommon / Math.max(weightedProduct, 1)) * 76 + (common.length / Math.max(requested.length, 1)) * 18;
+    if (text.includes(name)) result += 55;
+    const brandWords = matchWords(productBrand(item));
+    if (brandWords.length && brandWords.some(word => requested.includes(word))) result += 14;
+    if (item.weight_value && text.includes(String(item.weight_value)) && text.includes(normalize(item.weight_unit))) result += 16;
+    if (normalize(item.category).split(' ').some(word => word.length > 3 && requested.includes(word))) result += 5;
+    return result;
+  }
+  function matchProduct(line) {
+    const ranked = all.map(item => ({ item, score:score(line, item) })).sort((a, b) => b.score - a.score);
+    const best = ranked[0], next = ranked[1];
+    if (!best || best.score < 62) return '';
+    // Przy zbliżonych produktach (np. kilka soków jabłkowych) nie zgadujemy za użytkownika.
+    if (next && best.score < 96 && best.score - next.score < 9) return '';
+    return best.item.id;
   }
   function quantityFrom(line) {
-    const values = [...line.matchAll(/(?:^|\s)(\d+(?:[,.]\d+)?)(?:\s*(?:szt\.?|opak\.?|op\.?|x))?(?=\s|$)/gi)];
-    return values.length ? Number(values[values.length - 1][1].replace(',', '.')) : '';
+    const marked = [...String(line || '').matchAll(/(\d+(?:[,.]\d+)?)\s*(?:szt\.?|sztuk(?:a|i)?|opak\.?|opakowanie|op\.?|x\b|kg|kilogram(?:y|ow)?|l\b|lit(?:r|ry|row)?)/gi)];
+    if (marked.length) return Number(marked[marked.length - 1][1].replace(',', '.'));
+    const atEnd = String(line || '').match(/(?:[-–—:]\s*|\s)(\d+(?:[,.]\d+)?)\s*$/);
+    return atEnd ? Number(atEnd[1].replace(',', '.')) : '';
   }
   function comparison() {
     const grouped = new Map();
@@ -102,8 +122,7 @@
     const lines = enteredLines.filter(line => !ignoredDemandLine(line));
     rows.innerHTML = ''; let matched = 0;
     lines.forEach(line => {
-      const best = all.map(item => ({ item, score:score(line, item) })).sort((a, b) => b.score - a.score)[0];
-      const productId = best?.score >= 55 ? best.item.id : '';
+      const productId = matchProduct(line);
       if (productId) matched += 1;
       addRow(productId, quantityFrom(line), line);
     });

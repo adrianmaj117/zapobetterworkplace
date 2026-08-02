@@ -21,23 +21,52 @@
     row.innerHTML = `<input class="demand-raw" aria-label="Odczytany tekst" value="${esc(source)}" placeholder="Tekst odczytany ze zdjęcia"><select class="demand-product" aria-label="Produkt">${productOptions(productId)}</select><input class="demand-quantity" aria-label="Ilość" type="number" min="0.01" step="any" value="${esc(quantity)}" placeholder="Ilość"><button type="button" class="demand-remove" title="Usuń pozycję" aria-label="Usuń pozycję">×</button>`;
     rows.append(row);
   }
+  const ignoredMatchWords = new Set(['szt', 'sztuka', 'sztuk', 'opakowanie', 'opak', 'produkt', 'office', 'box', 'bez', 'z', 'na', 'do', 'i', 'oraz']);
+  const matchWords = value => normalize(value).split(' ').filter(word => word.length > 1 && !/^\d+$/.test(word) && !ignoredMatchWords.has(word));
   function score(line, item) {
     const text = normalize(line), name = normalize(item.name); if (!text || !name) return 0;
-    if (text.includes(name)) return 100;
-    const words = name.split(' ').filter(word => word.length > 2);
-    return words.filter(word => text.includes(word)).length / Math.max(words.length, 1) * 80;
+    const requested = matchWords(text), product = matchWords(name); if (!requested.length || !product.length) return 0;
+    const common = product.filter(word => requested.includes(word));
+    const weightedCommon = common.reduce((sum, word) => sum + (word.length >= 6 ? 1.8 : 1), 0);
+    const weightedProduct = product.reduce((sum, word) => sum + (word.length >= 6 ? 1.8 : 1), 0);
+    let result = (weightedCommon / Math.max(weightedProduct, 1)) * 76 + (common.length / Math.max(requested.length, 1)) * 18;
+    if (text.includes(name)) result += 55;
+    const brandWords = matchWords(brand(item));
+    if (brandWords.length && brandWords.some(word => requested.includes(word))) result += 14;
+    if (item.weight_value && text.includes(String(item.weight_value)) && text.includes(normalize(item.weight_unit))) result += 16;
+    return result;
+  }
+  function matchProduct(line) {
+    const ranked = all.map(item => ({ item, score:score(line, item) })).sort((a, b) => b.score - a.score);
+    const best = ranked[0], next = ranked[1];
+    if (!best || best.score < 62) return '';
+    if (next && best.score < 96 && best.score - next.score < 9) return '';
+    return best.item.id;
   }
   function quantityFrom(line) {
-    const values = [...line.matchAll(/(?:^|\s)(\d+(?:[,.]\d+)?)(?:\s*(?:szt\.?|opak\.?|op\.?|x))?(?=\s|$)/gi)];
-    return values.length ? Number(values[values.length - 1][1].replace(',', '.')) : '';
+    const marked = [...String(line || '').matchAll(/(\d+(?:[,.]\d+)?)\s*(?:szt\.?|sztuk(?:a|i)?|opak\.?|opakowanie|op\.?|x\b|kg|kilogram(?:y|ow)?|l\b|lit(?:r|ry|row)?)/gi)];
+    if (marked.length) return Number(marked[marked.length - 1][1].replace(',', '.'));
+    const atEnd = String(line || '').match(/(?:[-–—:]\s*|\s)(\d+(?:[,.]\d+)?)\s*$/);
+    return atEnd ? Number(atEnd[1].replace(',', '.')) : '';
+  }
+  async function prepareImageForOcr(file) {
+    if (!file?.type?.startsWith('image/')) return file;
+    const url = URL.createObjectURL(file);
+    try {
+      const image = await new Promise((resolve, reject) => { const element = new Image(); element.onload = () => resolve(element); element.onerror = reject; element.src = url; });
+      const longestSide = Math.max(image.naturalWidth, image.naturalHeight);
+      const scale = Math.min(1, 1800 / Math.max(longestSide, 1));
+      const canvas = document.createElement('canvas'); canvas.width = Math.max(1, Math.round(image.naturalWidth * scale)); canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+      const context = canvas.getContext('2d'); context.filter = 'grayscale(1) contrast(1.35) brightness(1.08)'; context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      return canvas.toDataURL('image/jpeg', .88);
+    } catch { return file; } finally { URL.revokeObjectURL(url); }
   }
   function buildPreview(text) {
     rows.innerHTML = '';
     const lines = text.split(/\r?\n/).map(line => line.trim()).filter(line => line.length >= 2 && !/^#{3}/.test(line));
     let matched = 0;
     lines.forEach(line => {
-      const best = all.map(item => ({ item, score:score(line, item) })).sort((a,b) => b.score-a.score)[0];
-      const productId = best?.score >= 45 ? best.item.id : '';
+      const productId = matchProduct(line);
       if (productId) matched += 1;
       addRow(productId, quantityFrom(line), line);
     });
@@ -54,8 +83,9 @@
     try {
       const fragments = [];
       for (let index = 0; index < files.length; index += 1) {
-        const file = files[index]; status.textContent = `Odczytuję zdjęcie ${index + 1} z ${files.length}: ${file.name}`;
-        const result = await window.Tesseract.recognize(file, 'pol+eng', { logger: message => { if (message.status === 'recognizing text') status.textContent = `Odczytuję zdjęcie ${index + 1} z ${files.length}: ${Math.round((message.progress || 0) * 100)}%`; } });
+        const file = files[index]; status.textContent = `Przygotowuję zdjęcie ${index + 1} z ${files.length}: ${file.name}`;
+        const source = await prepareImageForOcr(file);
+        const result = await window.Tesseract.recognize(source, 'pol+eng', { tessedit_pageseg_mode:'6', logger: message => { if (message.status === 'recognizing text') status.textContent = `Odczytuję zdjęcie ${index + 1} z ${files.length}: ${Math.round((message.progress || 0) * 100)}%`; } });
         fragments.push(`### ${file.name}\n${result.data.text || ''}`);
       }
       recognizedText = fragments.join('\n\n'); buildPreview(recognizedText);
