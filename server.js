@@ -266,6 +266,7 @@ app.get('/api/purchases', (req, res) => {
 });
 
 app.put('/api/purchases/budget', (req, res) => {
+  if (req.body?.password !== '123') return res.status(403).json({ error: 'Nieprawidłowe hasło do zmiany stanu pieniędzy.' });
   const amount = Number(req.body?.amount);
   if (!Number.isFinite(amount) || amount < 0) return res.status(400).json({ error: 'Podaj prawidłową kwotę pieniędzy.' });
   db.prepare(`INSERT INTO app_settings (key, value, updated_at) VALUES ('purchase_budget', ?, CURRENT_TIMESTAMP)

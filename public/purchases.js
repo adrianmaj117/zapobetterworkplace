@@ -136,7 +136,11 @@
 
   document.querySelector('#savePurchaseBudget').addEventListener('click', async () => {
     try {
-      await api('/api/purchases/budget', { method: 'PUT', body: JSON.stringify({ amount: amountValue(document.querySelector('#purchaseBudget').value) }) });
+      await api('/api/purchases/budget', { method: 'PUT', body: JSON.stringify({
+        amount: amountValue(document.querySelector('#purchaseBudget').value),
+        password: document.querySelector('#purchaseBudgetPassword').value
+      }) });
+      document.querySelector('#purchaseBudgetPassword').value = '';
       await refresh();
     } catch (error) { alert(error.message); }
   });
