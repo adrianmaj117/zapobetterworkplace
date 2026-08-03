@@ -141,6 +141,8 @@ db.exec(`
 if (!db.prepare('PRAGMA table_info(shopping_lists)').all().some(column => column.name === 'list_date')) db.exec('ALTER TABLE shopping_lists ADD COLUMN list_date TEXT');
 if (!db.prepare('PRAGMA table_info(shopping_list_items)').all().some(column => column.name === 'purchased_at')) db.exec('ALTER TABLE shopping_list_items ADD COLUMN purchased_at TEXT');
 if (!db.prepare('PRAGMA table_info(shopping_list_items)').all().some(column => column.name === 'purchased_date')) db.exec('ALTER TABLE shopping_list_items ADD COLUMN purchased_date TEXT');
+if (!db.prepare('PRAGMA table_info(shopping_list_items)').all().some(column => column.name === 'purchased_quantity')) db.exec('ALTER TABLE shopping_list_items ADD COLUMN purchased_quantity REAL NOT NULL DEFAULT 0');
+db.prepare('UPDATE shopping_list_items SET purchased_quantity=missing_quantity WHERE purchased_at IS NOT NULL AND COALESCE(purchased_quantity, 0)=0').run();
 
 function syncBundledInventory() {
   if (dbPath === bundledDbPath || !fs.existsSync(bundledDbPath)) return 0;
@@ -525,14 +527,47 @@ app.delete('/api/shopping-lists/items/:id', (req, res) => {
   res.status(204).end();
 });
 
-// Zielona fajka jest wyłącznie potwierdzeniem zakupu. Nie zmienia stanów
-// magazynowych: pozycja zostaje na liście jako „Kupione” i trafia do historii dnia.
+// Zielona fajka zapisuje zakupioną część do historii dnia. Tylko nadwyżka
+// ponad wymagane zapotrzebowanie trafia jako nowa partia do magazynu.
 app.post('/api/shopping-lists/items/:id/complete', (req, res) => {
   const item = db.prepare('SELECT i.*, s.list_date FROM shopping_list_items i JOIN shopping_lists s ON s.id=i.shopping_list_id WHERE i.id=?').get(Number(req.params.id));
   if (!item) return res.status(404).json({ error: 'Nie znaleziono tej pozycji na liście zakupów.' });
+  const purchasedNow = Number(req.body?.purchased_quantity);
+  if (!Number.isFinite(purchasedNow) || purchasedNow <= 0) return res.status(400).json({ error: 'Podaj prawidłową liczbę zakupionych sztuk.' });
   const purchaseDate = /^\d{4}-\d{2}-\d{2}$/.test(String(req.body?.purchased_date || '')) ? req.body.purchased_date : new Date().toISOString().slice(0, 10);
-  db.prepare('UPDATE shopping_list_items SET purchased_at=CURRENT_TIMESTAMP, purchased_date=? WHERE id=?').run(purchaseDate, item.id);
-  res.json({ item_id:item.id, purchased_date:purchaseDate, message:'Pozycja została oznaczona jako kupiona. Stan magazynu nie został zmieniony.' });
+  const alreadyPurchased = Math.min(Number(item.purchased_quantity || 0), Number(item.missing_quantity));
+  const requiredRemaining = Math.max(0, Number(item.missing_quantity) - alreadyPurchased);
+  const historyQuantity = Math.min(purchasedNow, requiredRemaining);
+  const surplusQuantity = Math.max(0, purchasedNow - historyQuantity);
+  const received = parseExpiration(req.body?.received_date) || purchaseDate;
+  const expiration = parseExpiration(req.body?.expiration_date);
+  db.exec('BEGIN');
+  try {
+    if (historyQuantity > 0) {
+      db.prepare('UPDATE shopping_list_items SET purchased_at=CURRENT_TIMESTAMP, purchased_date=?, purchased_quantity=purchased_quantity+? WHERE id=?')
+        .run(purchaseDate, historyQuantity, item.id);
+    }
+    let product = null;
+    if (surplusQuantity > 0) {
+      product = item.product_id ? productById(item.product_id) : null;
+      if (!product) {
+        const weight = String(item.weight || '').match(/^\s*(\d+(?:[.,]\d+)?)\s*(g|kg|ml|l)\s*$/i);
+        const result = db.prepare(`INSERT INTO products (name, category, brand, unit, quantity, min_quantity, weight_value, weight_unit, expiration_date, received_date, updated_at)
+          VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, CURRENT_TIMESTAMP)`)
+          .run(item.name, canonicalCategory(item.category), item.brand || '', item.unit || 'szt.', surplusQuantity, weight ? Number(weight[1].replace(',', '.')) : null, weight ? weight[2].toLowerCase() : null, expiration, received);
+        product = productById(result.lastInsertRowid);
+      } else {
+        db.prepare('UPDATE products SET quantity=quantity+?, updated_at=CURRENT_TIMESTAMP WHERE id=?').run(surplusQuantity, product.id);
+      }
+      db.prepare('INSERT INTO product_batches (product_id, quantity, expiration_date, received_date) VALUES (?, ?, ?, ?)')
+        .run(product.id, surplusQuantity, expiration, received);
+      syncProductExpiryFromBatches(product.id);
+      db.prepare("INSERT INTO movements (product_id, type, quantity, note) VALUES (?, 'add', ?, 'Nadwyżka z listy zakupów')")
+        .run(product.id, surplusQuantity);
+    }
+    db.exec('COMMIT');
+    res.json({ item_id:item.id, purchased_quantity:historyQuantity, surplus_quantity:surplusQuantity, product, purchased_date:purchaseDate });
+  } catch (error) { db.exec('ROLLBACK'); throw error; }
 });
 
 db.exec(`CREATE TABLE IF NOT EXISTS category_images (
@@ -866,9 +901,9 @@ function getDemandItems(runId) {
 app.get('/api/demand/daily', (req, res) => {
   const demandDate = validDemandDate(req.query.date) ? req.query.date : new Date().toISOString().slice(0, 10);
   const runs = db.prepare("SELECT id, source_name, demand_date, created_at, reversed_at FROM demand_runs WHERE COALESCE(demand_date, date(created_at))=? ORDER BY id DESC").all(demandDate);
-  const purchases = db.prepare(`SELECT i.id, i.name, i.category, i.brand, i.weight, i.missing_quantity, i.unit, i.purchased_date
+  const purchases = db.prepare(`SELECT i.id, i.name, i.category, i.brand, i.weight, i.purchased_quantity, i.unit, i.purchased_date
     FROM shopping_list_items i
-    WHERE COALESCE(i.purchased_date, date(i.purchased_at))=?
+    WHERE COALESCE(i.purchased_date, date(i.purchased_at))=? AND COALESCE(i.purchased_quantity, 0)>0
     ORDER BY i.category COLLATE NOCASE, i.name COLLATE NOCASE`).all(demandDate);
   const withItems = runs.map(run => ({ ...run, items: getDemandItems(run.id) }));
   const summary = new Map();

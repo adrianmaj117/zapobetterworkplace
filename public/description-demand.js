@@ -123,7 +123,7 @@
     const content = document.querySelector('#shoppingListContent'), print = document.querySelector('#printShoppingList');
     if (!list) { content.innerHTML = '<p class="demand-status">Nie ma jeszcze porównanego zapotrzebowania. Wklej nowy opis, aby utworzyć listę.</p>'; print.hidden = true; return; }
     if (!list.items?.length) { content.innerHTML = `<p class="shopping-list-date">Na dzień: ${escapeHtml(list.list_date || list.created_at || '')}</p><p class="demand-status">✓ W bieżącym zapotrzebowaniu nie ma produktów do kupienia.</p>`; print.hidden = true; return; }
-    content.innerHTML = `<p class="shopping-list-date">Na dzień: ${escapeHtml(list.list_date || list.created_at || '')}</p>${list.items.map(item => { const purchased = Boolean(item.purchased_at); return `<article class="${purchased ? 'is-purchased' : ''}"><span><b>${escapeHtml(item.name)}</b><small>${escapeHtml(item.category)}${item.brand ? ` · ${escapeHtml(item.brand)}` : ''}${item.weight ? ` · ${escapeHtml(item.weight)}` : ''}</small></span><span>stan: ${item.available_quantity} ${escapeHtml(item.unit)}<b>do kupienia: ${item.missing_quantity} ${escapeHtml(item.unit)}</b></span>${purchased ? '<span class="shopping-purchased">✓ Kupione</span>' : `<button type="button" class="shopping-complete" data-shopping-complete="${item.id}" title="Oznacz jako kupione i zapisz w historii dnia" aria-label="Oznacz jako kupione: ${escapeHtml(item.name)}">✓</button>`}<button type="button" class="shopping-remove" data-shopping-remove="${item.id}" title="Usuń z tej listy" aria-label="Usuń ${escapeHtml(item.name)} z listy zakupów">×</button></article>`; }).join('')}`;
+    content.innerHTML = `<p class="shopping-list-date">Na dzień: ${escapeHtml(list.list_date || list.created_at || '')}</p>${list.items.map(item => { const required = Number(item.missing_quantity || 0), purchased = Math.min(Number(item.purchased_quantity || 0), required), remaining = Math.max(0, required - purchased), completed = remaining === 0; return `<article class="${completed ? 'is-purchased' : ''}"><span><b>${escapeHtml(item.name)}</b><small>${escapeHtml(item.category)}${item.brand ? ` · ${escapeHtml(item.brand)}` : ''}${item.weight ? ` · ${escapeHtml(item.weight)}` : ''}</small></span><span>stan: ${item.available_quantity} ${escapeHtml(item.unit)}<b>${completed ? `kupiono: ${purchased} ${escapeHtml(item.unit)}` : `do kupienia: ${remaining} ${escapeHtml(item.unit)}`}</b></span>${completed ? '<span class="shopping-purchased">✓ Kupione</span>' : `<button type="button" class="shopping-complete" data-shopping-complete="${item.id}" title="Podaj liczbę faktycznie kupionych sztuk" aria-label="Oznacz zakup: ${escapeHtml(item.name)}">✓</button>`}<button type="button" class="shopping-remove" data-shopping-remove="${item.id}" title="Usuń z tej listy" aria-label="Usuń ${escapeHtml(item.name)} z listy zakupów">×</button></article>`; }).join('')}`;
     print.hidden = false; print.dataset.list = JSON.stringify(list);
   }
   function printShoppingList(list) {
@@ -159,9 +159,18 @@
         const list = await api('/api/shopping-lists/latest');
         const item = list?.items?.find(entry => Number(entry.id) === Number(complete.dataset.shoppingComplete));
         if (!item) return;
-        if (!confirm(`Oznaczyć „${item.name}” jako kupione? Produkt pozostanie bez zmian w magazynie, a zakup zapisze się w historii dnia.`)) return;
-        await api(`/api/shopping-lists/items/${item.id}/complete`, { method:'POST', body:JSON.stringify({ purchased_date:new Date().toISOString().slice(0, 10) }) });
+        const already = Number(item.purchased_quantity || 0), remaining = Math.max(0, Number(item.missing_quantity) - already);
+        const answer = prompt(`Ile faktycznie kupiono produktu „${item.name}”?\nDo uzupełnienia zapotrzebowania pozostało: ${remaining} ${item.unit}.`, String(remaining));
+        if (answer === null) return;
+        const bought = Number(String(answer).replace(',', '.'));
+        if (!Number.isFinite(bought) || bought <= 0) return alert('Wpisz prawidłową liczbę zakupionych sztuk.');
+        let expiration = '';
+        if (bought > remaining && String(item.category || '').toLocaleLowerCase('pl-PL').includes('nabiał')) {
+          expiration = prompt(`Nadwyżka ${bought - remaining} ${item.unit} trafi do magazynu. Wpisz jej termin ważności w formacie RRRR-MM-DD (możesz pominąć).`) || '';
+        }
+        await api(`/api/shopping-lists/items/${item.id}/complete`, { method:'POST', body:JSON.stringify({ purchased_quantity:bought, purchased_date:new Date().toISOString().slice(0, 10), received_date:new Date().toISOString().slice(0, 10), expiration_date:expiration || null }) });
         renderShoppingList(await api('/api/shopping-lists/latest'));
+        if (bought > remaining) await load();
       } catch (error) { alert(error.message); }
       return;
     }
