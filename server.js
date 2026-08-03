@@ -80,6 +80,15 @@ db.exec(`CREATE TABLE IF NOT EXISTS app_settings (
   value TEXT NOT NULL,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 )`);
+db.exec(`CREATE TABLE IF NOT EXISTS purchases (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  supplier TEXT NOT NULL DEFAULT 'SELGROS',
+  invoice_date TEXT,
+  gross_amount REAL NOT NULL CHECK(gross_amount >= 0),
+  note TEXT DEFAULT '',
+  image_data TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+)`);
 db.exec(`
   CREATE TABLE IF NOT EXISTS demand_runs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -243,6 +252,43 @@ function productById(id) {
 function validNumber(value) {
   return typeof value === 'number' && Number.isFinite(value);
 }
+
+function purchaseSummary() {
+  const budgetSetting = db.prepare("SELECT value FROM app_settings WHERE key='purchase_budget'").get();
+  const budget = Number(budgetSetting?.value || 0);
+  const spent = Number(db.prepare('SELECT COALESCE(SUM(gross_amount), 0) AS total FROM purchases').get().total || 0);
+  return { budget, spent, remaining: budget - spent };
+}
+
+app.get('/api/purchases', (req, res) => {
+  const purchases = db.prepare('SELECT * FROM purchases ORDER BY COALESCE(invoice_date, date(created_at)) DESC, id DESC').all();
+  res.json({ ...purchaseSummary(), purchases });
+});
+
+app.put('/api/purchases/budget', (req, res) => {
+  const amount = Number(req.body?.amount);
+  if (!Number.isFinite(amount) || amount < 0) return res.status(400).json({ error: 'Podaj prawidłową kwotę pieniędzy.' });
+  db.prepare(`INSERT INTO app_settings (key, value, updated_at) VALUES ('purchase_budget', ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=CURRENT_TIMESTAMP`).run(String(amount));
+  res.json(purchaseSummary());
+});
+
+app.post('/api/purchases', (req, res) => {
+  const amount = Number(req.body?.gross_amount);
+  const supplier = String(req.body?.supplier || 'SELGROS').trim().slice(0, 120) || 'SELGROS';
+  const image = req.body?.image_data || null;
+  if (!Number.isFinite(amount) || amount < 0) return res.status(400).json({ error: 'Podaj kwotę brutto z faktury.' });
+  if (image && !String(image).startsWith('data:image/')) return res.status(400).json({ error: 'Zdjęcie faktury ma nieprawidłowy format.' });
+  const result = db.prepare(`INSERT INTO purchases (supplier, invoice_date, gross_amount, note, image_data)
+    VALUES (?, ?, ?, ?, ?)`).run(supplier, parseExpiration(req.body?.invoice_date), amount, String(req.body?.note || '').trim().slice(0, 1000), image);
+  res.status(201).json(db.prepare('SELECT * FROM purchases WHERE id=?').get(result.lastInsertRowid));
+});
+
+app.delete('/api/purchases/:id', (req, res) => {
+  const result = db.prepare('DELETE FROM purchases WHERE id=?').run(Number(req.params.id));
+  if (!result.changes) return res.status(404).json({ error: 'Nie znaleziono tego zakupu.' });
+  res.status(204).end();
+});
 
 // Jedna, stała pisownia kategorii. Dzięki temu przypadkowo wpisana nazwa
 // (np. "Bułki z Katowic") nie tworzy drugi raz tego samego kafelka.

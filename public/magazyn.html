@@ -30,6 +30,7 @@
       <strong class="brand-one-line">ZapoBetterWorkPlace</strong>
     </button>
     <button type="button" id="selgrosCard" class="selgros-open" aria-haspopup="dialog">SELGROS</button>
+    <button type="button" id="purchases" class="small-btn purchases-open" aria-haspopup="dialog">Zakupy</button>
     <div class="head-buttons">
       <button id="showInventory" class="small-btn">▦ Pokaż stany</button>
       <button id="demandHistory" class="small-btn">▤ Historia dnia</button>
@@ -104,6 +105,33 @@
       </section>
       <p class="selgros-help">Pokaż tę kartę przy zakupach w SELGROS.</p>
       <div class="form-actions"><button type="button" id="closeSelgrosBottom" class="button primary">Zamknij</button></div>
+    </form>
+  </dialog>
+  <dialog id="purchasesDialog" class="purchases-dialog">
+    <form id="purchaseForm">
+      <div class="modal-head"><h2>Zakupy</h2><button type="button" id="closePurchases" class="icon-btn">×</button></div>
+      <p class="purchases-intro">Zapisz zdjęcie faktury i jej kwotę brutto. Suma wydatków oraz dostępne pieniądze zaktualizują się automatycznie.</p>
+      <section class="purchase-totals">
+        <article><span>Stan pieniędzy</span><strong id="purchaseBudgetValue">0,00 zł</strong></article>
+        <article><span>Wydano brutto</span><strong id="purchaseSpentValue">0,00 zł</strong></article>
+        <article><span>Pozostało</span><strong id="purchaseRemainingValue">0,00 zł</strong></article>
+      </section>
+      <section class="purchase-budget-edit">
+        <label>Ile masz pieniędzy?<input id="purchaseBudget" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0,00"></label>
+        <button type="button" id="savePurchaseBudget" class="button ghost">Zapisz kwotę</button>
+      </section>
+      <section class="purchase-add">
+        <h3>Dodaj fakturę</h3>
+        <div class="form-grid">
+          <label>Sklep / dostawca<input id="purchaseSupplier" value="SELGROS" maxlength="120"></label>
+          <label>Data faktury<input id="purchaseDate" type="date"></label>
+          <label>Kwota brutto<input id="purchaseAmount" type="number" min="0" step="0.01" inputmode="decimal" required placeholder="np. 123,45"></label>
+          <label class="full">Zdjęcie faktury<input id="purchasePhoto" type="file" accept="image/*" required></label>
+          <label class="full">Notatka <small>(opcjonalnie)</small><input id="purchaseNote" maxlength="1000" placeholder="np. zakupy na poniedziałek"></label>
+        </div>
+        <div class="form-actions"><button type="submit" class="button primary">Zapisz fakturę</button></div>
+      </section>
+      <section class="purchase-history"><h3>Historia faktur</h3><div id="purchaseList" class="purchase-list"></div></section>
     </form>
   </dialog>
   <dialog id="barcodeDialog" class="demand-dialog barcode-dialog">
@@ -235,6 +263,7 @@
   </dialog>
   <script src="warehouse.js"></script>
   <script src="batches-view.js"></script>
+  <script src="purchases.js"></script>
   <script src="https://unpkg.com/@zxing/browser@0.1.5"></script>
   <script src="barcode.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
