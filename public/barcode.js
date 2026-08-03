@@ -7,7 +7,8 @@
   const status = document.querySelector('#barcodeStatus');
   const result = document.querySelector('#barcodeResult');
   const addMissing = document.querySelector('#barcodeAddMissing');
-  let stream = null, detector = null, timer = null, currentCode = '', zxingControls = null, captureTarget = '';
+  let stream = null, detector = null, timer = null, currentCode = '', zxingControls = null, captureTarget = '', addDeliveryFlow = false;
+  const skipToManual = document.querySelector('#barcodeSkipToManual');
 
   const cleanCode = value => String(value || '').trim().replace(/[^0-9A-Za-z-]/g, '').toUpperCase();
   const escapeHtml = value => String(value || '').replace(/[&<>"']/g, character => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[character]));
@@ -23,6 +24,7 @@
   function reset(keepCaptureTarget = false) {
     stopCamera(); currentCode = ''; manual.value = ''; result.hidden = true; result.innerHTML = ''; addMissing.hidden = true;
     status.textContent = 'Aparat jest wyłączony.';
+    skipToManual.hidden = true;
     if (!keepCaptureTarget) captureTarget = '';
   }
   function saveScannedCode(code) {
@@ -44,6 +46,20 @@
     if (!code) { status.textContent = 'Wpisz kod kreskowy albo włącz aparat.'; return; }
     currentCode = code; manual.value = code; stopCamera();
     if (captureTarget && saveScannedCode(code)) return;
+    if (addDeliveryFlow) {
+      const product = all.find(item => cleanCode(item.barcode) === code);
+      if (product) {
+        status.textContent = 'Znaleziono artykuł. Uzupełniam nową dostawę…';
+        stopCamera();
+        dialog.close();
+        window.openAddDeliveryForm?.(product, code);
+        return;
+      }
+      status.textContent = `Nie ma artykułu z kodem ${code}. Wpisz dane nowego produktu.`;
+      result.hidden = false; addMissing.hidden = false;
+      result.innerHTML = '<article class="barcode-not-found"><strong>Nowy produkt</strong><p>Ten kod nie jest jeszcze w magazynie. Uzupełnij dane ręcznie.</p></article>';
+      return;
+    }
     const product = all.find(item => cleanCode(item.barcode) === code);
     if (product) { status.textContent = `Znaleziono kod: ${code}`; showProduct(product); return; }
     status.textContent = `Nie ma artykułu z kodem ${code} w magazynie.`;
@@ -102,6 +118,11 @@
   }
   function addProductWithCode() {
     if (!currentCode) return;
+    if (addDeliveryFlow) {
+      dialog.close();
+      window.openAddDeliveryForm?.(null, currentCode);
+      return;
+    }
     dialog.close(); document.querySelector('#add').click();
     let tries = 0;
     const insertCode = () => {
@@ -112,18 +133,31 @@
   }
 
   function openLookup() {
+    addDeliveryFlow = false;
     reset();
     dialog.querySelector('h2').textContent = 'Znajdź artykuł kodem';
     dialog.showModal();
     startCamera();
   }
   function openCapture(targetId) {
+    addDeliveryFlow = false;
     captureTarget = targetId;
     reset(true);
     dialog.querySelector('h2').textContent = 'Dodaj kod kreskowy';
     dialog.showModal();
     startCamera();
   }
+  function openNewDeliveryBarcode() {
+    addDeliveryFlow = true;
+    captureTarget = '';
+    reset();
+    skipToManual.hidden = false;
+    dialog.querySelector('h2').textContent = 'Zeskanuj produkt z dostawy';
+    status.textContent = 'Zeskanuj kod, aby automatycznie uzupełnić dane produktu. Możesz też wybrać „Wpisz ręcznie”.';
+    dialog.showModal();
+    startCamera();
+  }
+  window.openBarcodeForNewDelivery = openNewDeliveryBarcode;
 
   openButton.addEventListener('click', openLookup);
   document.addEventListener('click', event => {
@@ -137,6 +171,7 @@
   manual.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); lookup(manual.value); } });
   result.addEventListener('click', event => { const button = event.target.closest('[data-open-product]'); if (button) openProduct(button.dataset.openProduct); });
   addMissing.addEventListener('click', addProductWithCode);
+  skipToManual.addEventListener('click', () => { dialog.close(); window.openAddDeliveryForm?.(null, ''); });
   ['closeBarcode', 'cancelBarcode'].forEach(id => document.querySelector(`#${id}`).addEventListener('click', () => dialog.close()));
-  dialog.addEventListener('close', () => { stopCamera(); captureTarget = ''; });
+  dialog.addEventListener('close', () => { stopCamera(); captureTarget = ''; addDeliveryFlow = false; });
 })();

@@ -157,7 +157,7 @@
       <div id="barcodeStatus" class="demand-status">Aparat jest wyłączony.</div>
       <label>Kod kreskowy<input id="barcodeManual" inputmode="numeric" autocomplete="off" placeholder="Wpisz lub zeskanuj kod"></label>
       <section id="barcodeResult" class="barcode-result" hidden></section>
-      <div class="form-actions"><button type="button" id="startBarcodeCamera" class="button primary">Włącz aparat</button><button type="button" id="findBarcodeManual" class="button ghost">Sprawdź kod</button><button type="button" id="barcodeAddMissing" class="button primary" hidden>＋ Dodaj artykuł</button><button type="button" id="cancelBarcode" class="button ghost">Zamknij</button></div>
+      <div class="form-actions"><button type="button" id="startBarcodeCamera" class="button primary">Włącz aparat</button><button type="button" id="findBarcodeManual" class="button ghost">Sprawdź kod</button><button type="button" id="barcodeAddMissing" class="button primary" hidden>＋ Dodaj artykuł</button><button type="button" id="barcodeSkipToManual" class="button ghost" hidden>Wpisz ręcznie</button><button type="button" id="cancelBarcode" class="button ghost">Zamknij</button></div>
     </form>
   </dialog>
   <dialog id="pathDialog">
@@ -282,6 +282,7 @@
   <script src="purchases.js"></script>
   <script src="https://unpkg.com/@zxing/browser@0.1.5"></script>
   <script src="barcode.js"></script>
+  <script src="add-delivery-scan.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
   <script>
     const selgrosDialog = document.querySelector('#selgrosDialog');
