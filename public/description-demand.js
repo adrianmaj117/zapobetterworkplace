@@ -123,7 +123,7 @@
     const content = document.querySelector('#shoppingListContent'), print = document.querySelector('#printShoppingList');
     if (!list) { content.innerHTML = '<p class="demand-status">Nie ma jeszcze porównanego zapotrzebowania. Wklej nowy opis, aby utworzyć listę.</p>'; print.hidden = true; return; }
     if (!list.items?.length) { content.innerHTML = `<p class="shopping-list-date">Na dzień: ${escapeHtml(list.list_date || list.created_at || '')}</p><p class="demand-status">✓ W bieżącym zapotrzebowaniu nie ma produktów do kupienia.</p>`; print.hidden = true; return; }
-    content.innerHTML = `<p class="shopping-list-date">Na dzień: ${escapeHtml(list.list_date || list.created_at || '')}</p>${list.items.map(item => `<article><span><b>${escapeHtml(item.name)}</b><small>${escapeHtml(item.category)}${item.brand ? ` · ${escapeHtml(item.brand)}` : ''}${item.weight ? ` · ${escapeHtml(item.weight)}` : ''}</small></span><span>stan: ${item.available_quantity} ${escapeHtml(item.unit)}<b>do kupienia: ${item.missing_quantity} ${escapeHtml(item.unit)}</b></span><button type="button" class="shopping-remove" data-shopping-remove="${item.id}" title="Usuń z tej listy" aria-label="Usuń ${escapeHtml(item.name)} z listy zakupów">×</button></article>`).join('')}`;
+    content.innerHTML = `<p class="shopping-list-date">Na dzień: ${escapeHtml(list.list_date || list.created_at || '')}</p>${list.items.map(item => `<article><span><b>${escapeHtml(item.name)}</b><small>${escapeHtml(item.category)}${item.brand ? ` · ${escapeHtml(item.brand)}` : ''}${item.weight ? ` · ${escapeHtml(item.weight)}` : ''}</small></span><span>stan: ${item.available_quantity} ${escapeHtml(item.unit)}<b>do kupienia: ${item.missing_quantity} ${escapeHtml(item.unit)}</b></span><button type="button" class="shopping-complete" data-shopping-complete="${item.id}" title="Zakupione — dodaj do magazynu" aria-label="Dodaj zakupione ${escapeHtml(item.name)} do magazynu">✓</button><button type="button" class="shopping-remove" data-shopping-remove="${item.id}" title="Usuń z tej listy" aria-label="Usuń ${escapeHtml(item.name)} z listy zakupów">×</button></article>`).join('')}`;
     print.hidden = false; print.dataset.list = JSON.stringify(list);
   }
   function printShoppingList(list) {
@@ -153,6 +153,24 @@
   ['closeShoppingList', 'closeShoppingListBottom'].forEach(id => document.querySelector(`#${id}`).addEventListener('click', () => document.querySelector('#shoppingListDialog').close()));
   document.querySelector('#shoppingList').addEventListener('click', async () => { try { renderShoppingList(await api('/api/shopping-lists/latest')); document.querySelector('#shoppingListDialog').showModal(); } catch (error) { alert(error.message); } });
   document.querySelector('#shoppingListContent').addEventListener('click', async event => {
+    const complete = event.target.closest('[data-shopping-complete]');
+    if (complete) {
+      try {
+        const list = await api('/api/shopping-lists/latest');
+        const item = list?.items?.find(entry => Number(entry.id) === Number(complete.dataset.shoppingComplete));
+        if (!item) return;
+        let expiration = '';
+        if (String(item.category || '').toLocaleLowerCase('pl-PL').includes('nabiał')) {
+          expiration = prompt('Nabiał: wpisz termin ważności w formacie RRRR-MM-DD.');
+          if (!expiration && !confirm('Nie wpisano terminu ważności. Dodać produkt mimo to?')) return;
+        }
+        if (!confirm(`Dodać do magazynu ${item.missing_quantity} ${item.unit} produktu „${item.name}”?`)) return;
+        await api(`/api/shopping-lists/items/${item.id}/complete`, { method:'POST', body:JSON.stringify({ received_date:new Date().toISOString().slice(0, 10), expiration_date:expiration || null }) });
+        renderShoppingList(await api('/api/shopping-lists/latest'));
+        await load();
+      } catch (error) { alert(error.message); }
+      return;
+    }
     const button = event.target.closest('[data-shopping-remove]');
     if (!button) return;
     try {

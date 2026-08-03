@@ -235,6 +235,20 @@ if (defaultFruitProducts) console.log(`Dodano domyślne owoce: ${defaultFruitPro
 const historicalBatches = seedMissingProductBatches();
 if (historicalBatches) console.log(`Utworzono historyczne partie produktów: ${historicalBatches}.`);
 
+// Pusta, zdublowana kategoria była tylko pozostałością po starszej nazwie.
+// Nie dotykamy produktów — usuwamy ją wyłącznie wtedy, gdy rzeczywiście jest pusta.
+function removeEmptyLegacyCookieCategory() {
+  const setting = 'removed_empty_legacy_cookie_category';
+  if (db.prepare('SELECT value FROM app_settings WHERE key=?').get(setting)) return false;
+  const category = 'Ciastka i batony';
+  if (db.prepare('SELECT COUNT(*) AS count FROM products WHERE category=?').get(category).count === 0) {
+    db.prepare('DELETE FROM inventory_paths WHERE category=?').run(category);
+    db.prepare("DELETE FROM category_images WHERE category=? OR category LIKE ? OR category LIKE ?")
+      .run(`category:${category}`, `brand:${category}:%`, `weight:${category}:%`);
+  }
+  db.prepare("INSERT INTO app_settings (key, value) VALUES (?, 'true')").run(setting);
+  return true;
+}
 app.use(express.json({ limit: '15mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -285,10 +299,37 @@ app.post('/api/purchases', (req, res) => {
   res.status(201).json(db.prepare('SELECT * FROM purchases WHERE id=?').get(result.lastInsertRowid));
 });
 
+app.put('/api/purchases/:id', (req, res) => {
+  const id = Number(req.params.id);
+  const existing = db.prepare('SELECT * FROM purchases WHERE id=?').get(id);
+  if (!existing) return res.status(404).json({ error: 'Nie znaleziono tej faktury.' });
+  const amount = Number(req.body?.gross_amount);
+  const supplier = String(req.body?.supplier || '').trim().slice(0, 120);
+  const image = req.body?.image_data || existing.image_data || null;
+  if (!supplier || !Number.isFinite(amount) || amount < 0) return res.status(400).json({ error: 'Uzupełnij dostawcę oraz prawidłową kwotę brutto.' });
+  if (image && !String(image).startsWith('data:image/')) return res.status(400).json({ error: 'Zdjęcie faktury ma nieprawidłowy format.' });
+  db.prepare(`UPDATE purchases SET supplier=?, invoice_date=?, gross_amount=?, note=?, image_data=? WHERE id=?`)
+    .run(supplier, parseExpiration(req.body?.invoice_date), amount, String(req.body?.note || '').trim().slice(0, 1000), image, id);
+  res.json(db.prepare('SELECT * FROM purchases WHERE id=?').get(id));
+});
+
 app.delete('/api/purchases/:id', (req, res) => {
   const result = db.prepare('DELETE FROM purchases WHERE id=?').run(Number(req.params.id));
   if (!result.changes) return res.status(404).json({ error: 'Nie znaleziono tego zakupu.' });
   res.status(204).end();
+});
+
+app.get('/api/settings/selgros-card', (req, res) => {
+  const record = db.prepare("SELECT value FROM app_settings WHERE key='selgros_card_image'").get();
+  res.json({ image_data: record?.value || null });
+});
+
+app.put('/api/settings/selgros-card', (req, res) => {
+  const image = req.body?.image_data;
+  if (!String(image || '').startsWith('data:image/')) return res.status(400).json({ error: 'Wybierz prawidłowy zrzut karty SELGROS.' });
+  db.prepare(`INSERT INTO app_settings (key, value, updated_at) VALUES ('selgros_card_image', ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=CURRENT_TIMESTAMP`).run(image);
+  res.json({ image_data:image });
 });
 
 // Jedna, stała pisownia kategorii. Dzięki temu przypadkowo wpisana nazwa
@@ -477,6 +518,37 @@ app.delete('/api/shopping-lists/items/:id', (req, res) => {
   res.status(204).end();
 });
 
+// Zielona fajka na liście zakupów: zakupiony brak wraca od razu do magazynu
+// jako nowa partia, a pozycja znika z bieżącej listy.
+app.post('/api/shopping-lists/items/:id/complete', (req, res) => {
+  const item = db.prepare('SELECT * FROM shopping_list_items WHERE id=?').get(Number(req.params.id));
+  if (!item) return res.status(404).json({ error: 'Nie znaleziono tej pozycji na liście zakupów.' });
+  const quantity = Number(req.body?.quantity ?? item.missing_quantity);
+  if (!Number.isFinite(quantity) || quantity <= 0) return res.status(400).json({ error: 'Podaj prawidłową ilość zakupionego produktu.' });
+  const received = parseExpiration(req.body?.received_date) || new Date().toISOString().slice(0, 10);
+  const expiration = parseExpiration(req.body?.expiration_date);
+  db.exec('BEGIN');
+  try {
+    let product = item.product_id ? productById(item.product_id) : null;
+    if (!product) {
+      const result = db.prepare(`INSERT INTO products (name, category, brand, unit, quantity, min_quantity, expiration_date, received_date, updated_at)
+        VALUES (?, ?, ?, ?, ?, 0, ?, ?, CURRENT_TIMESTAMP)`)
+        .run(item.name, canonicalCategory(item.category), item.brand || '', item.unit || 'szt.', quantity, expiration, received);
+      product = productById(result.lastInsertRowid);
+    } else {
+      db.prepare('UPDATE products SET quantity=quantity+?, updated_at=CURRENT_TIMESTAMP WHERE id=?').run(quantity, product.id);
+    }
+    db.prepare('INSERT INTO product_batches (product_id, quantity, expiration_date, received_date) VALUES (?, ?, ?, ?)')
+      .run(product.id, quantity, expiration, received);
+    syncProductExpiryFromBatches(product.id);
+    db.prepare("INSERT INTO movements (product_id, type, quantity, note) VALUES (?, 'add', ?, 'Zakup z listy zakupów')")
+      .run(product.id, quantity);
+    db.prepare('DELETE FROM shopping_list_items WHERE id=?').run(item.id);
+    db.exec('COMMIT');
+    res.json(productById(product.id));
+  } catch (error) { db.exec('ROLLBACK'); throw error; }
+});
+
 db.exec(`CREATE TABLE IF NOT EXISTS category_images (
   category TEXT PRIMARY KEY,
   image_data TEXT NOT NULL,
@@ -492,6 +564,7 @@ db.exec(`CREATE TABLE IF NOT EXISTS inventory_paths (
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   UNIQUE(level, category, brand, weight_value, weight_unit)
 )`);
+removeEmptyLegacyCookieCategory();
 
 // Trwałe uporządkowanie kategorii na istniejącym serwerze Railway.
 // Produkty są scalane, a nie kasowane: zachowujemy ilości, daty i zdjęcia.

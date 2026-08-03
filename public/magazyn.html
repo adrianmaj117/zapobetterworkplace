@@ -101,9 +101,10 @@
       <div class="modal-head"><h2>Karta SELGROS</h2><button type="button" id="closeSelgros" class="icon-btn">×</button></div>
       <section class="selgros-card" aria-label="Karta SELGROS">
         <strong>SELGROS</strong>
-        <svg id="selgrosBarcode" class="selgros-barcode" role="img" aria-label="Kod kreskowy karty 8112402006"></svg>
+        <div id="selgrosCardDisplay"><svg id="selgrosBarcode" class="selgros-barcode" role="img" aria-label="Kod kreskowy karty 8112402006"></svg></div>
       </section>
-      <p class="selgros-help">Pokaż tę kartę przy zakupach w SELGROS.</p>
+      <p class="selgros-help">Pokaż tę kartę przy zakupach w SELGROS. Jeśli aplikacja wymaga innej karty, możesz zapisać jej zrzut ekranu poniżej.</p>
+      <label class="selgros-upload">Dodaj zrzut ekranu karty SELGROS<input id="selgrosCardUpload" type="file" accept="image/*"></label>
       <div class="form-actions"><button type="button" id="closeSelgrosBottom" class="button primary">Zamknij</button></div>
     </form>
   </dialog>
@@ -131,7 +132,6 @@
           <label class="full">Notatka <small>(opcjonalnie)</small><input id="purchaseNote" maxlength="1000" placeholder="np. zakupy na poniedziałek"></label>
         </div>
         <div id="purchaseOcrStatus" class="purchase-ocr-status">Po wybraniu zdjęcia odczytam z niego dane faktury.</div>
-        <button type="button" id="purchaseNewPreview" class="purchase-new-preview" hidden title="Pokaż zdjęcie faktury w dużym widoku"><img alt="Podgląd nowej faktury"><span>Pokaż zdjęcie w pełnym widoku</span></button>
         <div class="form-actions"><button type="submit" class="button primary">Akceptuję i zapisz fakturę</button></div>
       </section>
       <section class="purchase-history"><h3>Historia faktur</h3><div id="purchaseList" class="purchase-list"></div></section>
@@ -141,6 +141,13 @@
     <div class="modal-head"><h2>Faktura</h2><button type="button" id="closeInvoiceImage" class="icon-btn">×</button></div>
     <img id="invoiceFullImage" alt="Pełny widok faktury">
     <div class="form-actions"><button type="button" id="returnInvoiceImage" class="button primary">Wróć</button></div>
+  </dialog>
+  <dialog id="productDetailDialog" class="product-detail-dialog">
+    <div class="modal-head"><h2>Szczegóły artykułu</h2><button type="button" id="closeProductDetail" class="icon-btn">×</button></div>
+    <section id="productDetailContent"></section>
+    <section class="product-delivery-history"><h3>Historia dostaw i terminów</h3><div id="productBatchHistory"></div></section>
+    <section class="product-delivery-history"><h3>Ostatnie zmiany stanu</h3><div id="productMovementHistory"></div></section>
+    <div class="form-actions"><button type="button" id="editDetailProduct" class="button ghost">Edytuj artykuł</button><button type="button" id="addDetailDelivery" class="button primary">＋ Dodaj dostawę</button><button type="button" id="closeProductDetailBottom" class="button ghost">Wróć</button></div>
   </dialog>
   <dialog id="barcodeDialog" class="demand-dialog barcode-dialog">
     <form method="dialog">
@@ -271,14 +278,35 @@
   </dialog>
   <script src="warehouse.js"></script>
   <script src="batches-view.js"></script>
+  <script src="product-detail.js"></script>
   <script src="purchases.js"></script>
   <script src="https://unpkg.com/@zxing/browser@0.1.5"></script>
   <script src="barcode.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
   <script>
     const selgrosDialog = document.querySelector('#selgrosDialog');
-    JsBarcode('#selgrosBarcode', '8112402006', { format: 'CODE128', displayValue: true, fontSize: 22, height: 105, margin: 18, lineColor: '#000', background: '#fff' });
-    document.querySelector('#selgrosCard').onclick = () => selgrosDialog.showModal();
+    const selgrosDisplay = document.querySelector('#selgrosCardDisplay');
+    const showDefaultSelgrosCard = () => {
+      selgrosDisplay.innerHTML = '<svg id="selgrosBarcode" class="selgros-barcode" role="img" aria-label="Kod kreskowy karty 8112402006"></svg>';
+      JsBarcode('#selgrosBarcode', '8112402006', { format: 'CODE128', displayValue: true, fontSize: 22, height: 105, margin: 18, lineColor: '#000', background: '#fff' });
+    };
+    const showSelgrosCard = image => {
+      if (image) selgrosDisplay.innerHTML = `<img class="selgros-screenshot" src="${image}" alt="Karta SELGROS">`;
+      else showDefaultSelgrosCard();
+    };
+    showDefaultSelgrosCard();
+    document.querySelector('#selgrosCard').onclick = async () => {
+      try { showSelgrosCard((await api('/api/settings/selgros-card')).image_data); } catch (_) { showDefaultSelgrosCard(); }
+      selgrosDialog.showModal();
+    };
+    document.querySelector('#selgrosCardUpload').onchange = async event => {
+      const file = event.target.files[0]; if (!file) return;
+      try {
+        const image = await read(file);
+        await api('/api/settings/selgros-card', { method:'PUT', body:JSON.stringify({ image_data:image }) });
+        showSelgrosCard(image);
+      } catch (error) { alert(error.message); }
+    };
     ['closeSelgros', 'closeSelgrosBottom'].forEach(id => document.querySelector('#' + id).onclick = () => selgrosDialog.close());
   </script>
   <script>

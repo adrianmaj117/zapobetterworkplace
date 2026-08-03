@@ -7,10 +7,11 @@
   const safe = value => String(value || '').replace(/[&<>]/g, character => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;' }[character]));
   const today = () => new Date().toISOString().slice(0, 10);
   const ocrStatus = document.querySelector('#purchaseOcrStatus');
-  const preview = document.querySelector('#purchaseNewPreview');
   const fullImageDialog = document.querySelector('#invoiceImageDialog');
   let invoiceData = '';
   let ocrLoader = null;
+  let editingPurchaseId = 0;
+  let savedPurchases = [];
 
   function invoiceImage(file) {
     return new Promise((resolve, reject) => {
@@ -78,8 +79,6 @@
   async function readInvoice(file) {
     try {
       invoiceData = await invoiceImage(file);
-      preview.hidden = false;
-      preview.querySelector('img').src = invoiceData;
       ocrStatus.textContent = 'Odczytuję kwotę brutto, datę i dostawcę z faktury…';
       const Tesseract = await loadOcr();
       const result = await Tesseract.recognize(invoiceData, 'pol+eng');
@@ -104,32 +103,28 @@
     document.querySelector('#purchaseSpentValue').textContent = money(data.spent);
     document.querySelector('#purchaseRemainingValue').textContent = money(data.remaining);
     document.querySelector('#purchaseBudget').value = data.budget || '';
+    savedPurchases = data.purchases;
     const list = document.querySelector('#purchaseList');
     list.innerHTML = data.purchases.length ? data.purchases.map(item => `
       <article class="purchase-item">
         ${item.image_data ? `<button type="button" class="purchase-image-open" data-invoice-image="${item.id}" title="Pokaż zdjęcie faktury w pełnym widoku"><img src="${item.image_data}" alt="Zdjęcie faktury"></button>` : '<div class="purchase-no-image">Faktura</div>'}
         <div><b>${safe(item.supplier)}</b><small>${item.invoice_date ? date(item.invoice_date) : 'brak daty'}${item.note ? ` · ${safe(item.note)}` : ''}</small></div>
         <strong>${money(item.gross_amount)}</strong>
+        <button type="button" class="small-btn purchase-edit" data-purchase-edit="${item.id}">Edytuj</button>
         <button type="button" class="small-btn purchase-delete" data-purchase-delete="${item.id}" title="Usuń wpis">Usuń</button>
       </article>`).join('') : '<p class="purchase-empty">Nie zapisano jeszcze żadnej faktury.</p>';
   }
 
   document.querySelector('#purchases').addEventListener('click', async () => {
-    document.querySelector('#purchaseDate').value = today();
+    resetPurchaseForm();
     dialog.showModal();
     try { await refresh(); } catch (error) { alert(error.message); }
   });
   document.querySelector('#closePurchases').addEventListener('click', () => dialog.close());
   ['closeInvoiceImage', 'returnInvoiceImage'].forEach(id => document.querySelector(`#${id}`).addEventListener('click', () => fullImageDialog.close()));
-  preview.addEventListener('click', () => {
-    document.querySelector('#invoiceFullImage').src = invoiceData;
-    fullImageDialog.showModal();
-  });
-
   document.querySelector('#purchasePhoto').addEventListener('change', () => {
     const file = document.querySelector('#purchasePhoto').files[0];
     invoiceData = '';
-    preview.hidden = true;
     ocrStatus.textContent = file ? 'Przygotowuję zdjęcie faktury…' : 'Po wybraniu zdjęcia odczytam z niego dane faktury.';
     if (file) readInvoice(file);
   });
@@ -148,21 +143,17 @@
   form.addEventListener('submit', async event => {
     event.preventDefault();
     const file = document.querySelector('#purchasePhoto').files[0];
-    if (!file) { alert('Dodaj zdjęcie faktury.'); return; }
+    if (!file && !editingPurchaseId) { alert('Dodaj zdjęcie faktury.'); return; }
     try {
-      await api('/api/purchases', { method: 'POST', body: JSON.stringify({
+      const body = {
         supplier: document.querySelector('#purchaseSupplier').value,
         invoice_date: document.querySelector('#purchaseDate').value,
         gross_amount: amountValue(document.querySelector('#purchaseAmount').value),
         note: document.querySelector('#purchaseNote').value,
-        image_data: invoiceData || await invoiceImage(file)
-      }) });
-      form.reset();
-      document.querySelector('#purchaseSupplier').value = 'SELGROS';
-      document.querySelector('#purchaseDate').value = today();
-      invoiceData = '';
-      preview.hidden = true;
-      ocrStatus.textContent = 'Po wybraniu zdjęcia odczytam z niego dane faktury.';
+        image_data: invoiceData || (editingPurchaseId ? null : await invoiceImage(file))
+      };
+      await api(editingPurchaseId ? `/api/purchases/${editingPurchaseId}` : '/api/purchases', { method: editingPurchaseId ? 'PUT' : 'POST', body: JSON.stringify(body) });
+      resetPurchaseForm();
       await refresh();
     } catch (error) { alert(error.message); }
   });
@@ -170,11 +161,29 @@
   document.querySelector('#purchaseList').addEventListener('click', async event => {
     const imageButton = event.target.closest('[data-invoice-image]');
     if (imageButton) {
-      const item = (await api('/api/purchases')).purchases.find(entry => Number(entry.id) === Number(imageButton.dataset.invoiceImage));
+      const item = savedPurchases.find(entry => Number(entry.id) === Number(imageButton.dataset.invoiceImage));
       if (item?.image_data) {
         document.querySelector('#invoiceFullImage').src = item.image_data;
         fullImageDialog.showModal();
       }
+      return;
+    }
+    const editButton = event.target.closest('[data-purchase-edit]');
+    if (editButton) {
+      const item = savedPurchases.find(entry => Number(entry.id) === Number(editButton.dataset.purchaseEdit));
+      if (!item) return;
+      editingPurchaseId = item.id;
+      invoiceData = '';
+      document.querySelector('.purchase-add h3').textContent = 'Edytuj fakturę';
+      document.querySelector('#purchaseSupplier').value = item.supplier;
+      document.querySelector('#purchaseDate').value = item.invoice_date || today();
+      document.querySelector('#purchaseAmount').value = Number(item.gross_amount).toFixed(2);
+      document.querySelector('#purchaseNote').value = item.note || '';
+      document.querySelector('#purchasePhoto').required = false;
+      document.querySelector('#purchasePhoto').value = '';
+      document.querySelector('#purchaseOcrStatus').textContent = 'Zmień dane albo dodaj nowe zdjęcie faktury, a następnie zatwierdź zapis.';
+      document.querySelector('#purchaseForm button[type="submit"]').textContent = 'Zapisz zmiany faktury';
+      document.querySelector('.purchase-add').scrollIntoView({ behavior:'smooth', block:'start' });
       return;
     }
     const button = event.target.closest('[data-purchase-delete]');
@@ -182,4 +191,16 @@
     try { await api(`/api/purchases/${button.dataset.purchaseDelete}`, { method: 'DELETE' }); await refresh(); }
     catch (error) { alert(error.message); }
   });
+
+  function resetPurchaseForm() {
+    editingPurchaseId = 0;
+    invoiceData = '';
+    form.reset();
+    document.querySelector('.purchase-add h3').textContent = 'Dodaj fakturę';
+    document.querySelector('#purchaseSupplier').value = 'SELGROS';
+    document.querySelector('#purchaseDate').value = today();
+    document.querySelector('#purchasePhoto').required = true;
+    document.querySelector('#purchaseOcrStatus').textContent = 'Po wybraniu zdjęcia odczytam z niego dane faktury.';
+    document.querySelector('#purchaseForm button[type="submit"]').textContent = 'Akceptuję i zapisz fakturę';
+  }
 })();
