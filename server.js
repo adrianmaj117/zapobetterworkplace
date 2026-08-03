@@ -139,6 +139,8 @@ db.exec(`
   );
 `);
 if (!db.prepare('PRAGMA table_info(shopping_lists)').all().some(column => column.name === 'list_date')) db.exec('ALTER TABLE shopping_lists ADD COLUMN list_date TEXT');
+if (!db.prepare('PRAGMA table_info(shopping_list_items)').all().some(column => column.name === 'purchased_at')) db.exec('ALTER TABLE shopping_list_items ADD COLUMN purchased_at TEXT');
+if (!db.prepare('PRAGMA table_info(shopping_list_items)').all().some(column => column.name === 'purchased_date')) db.exec('ALTER TABLE shopping_list_items ADD COLUMN purchased_date TEXT');
 
 function syncBundledInventory() {
   if (dbPath === bundledDbPath || !fs.existsSync(bundledDbPath)) return 0;
@@ -484,6 +486,12 @@ function shoppingListById(id) {
   list.items = db.prepare("SELECT * FROM shopping_list_items WHERE shopping_list_id=? ORDER BY category COLLATE NOCASE, name COLLATE NOCASE").all(id).filter(item => !isExcludedShoppingItem(item));
   return list;
 }
+function clearUnpurchasedShoppingLists() {
+  db.prepare('DELETE FROM shopping_list_items WHERE purchased_at IS NULL').run();
+  db.prepare(`DELETE FROM shopping_lists WHERE NOT EXISTS (
+    SELECT 1 FROM shopping_list_items i WHERE i.shopping_list_id=shopping_lists.id AND i.purchased_at IS NOT NULL
+  )`).run();
+}
 app.get('/api/shopping-lists/latest', (req, res) => {
   const latest = db.prepare('SELECT id FROM shopping_lists ORDER BY id DESC LIMIT 1').get();
   res.json(latest ? shoppingListById(latest.id) : null);
@@ -500,8 +508,7 @@ app.post('/api/shopping-lists', (req, res) => {
   try {
     const listDate = /^\d{4}-\d{2}-\d{2}$/.test(String(req.body?.list_date || '')) ? req.body.list_date : new Date().toISOString().slice(0, 10);
     // Lista zakupów przedstawia wyłącznie bieżące porównanie — także wtedy, gdy braków nie ma.
-    db.prepare('DELETE FROM shopping_list_items').run();
-    db.prepare('DELETE FROM shopping_lists').run();
+    clearUnpurchasedShoppingLists();
     const list = db.prepare('INSERT INTO shopping_lists (source_text, list_date) VALUES (?, ?)').run(String(req.body?.source_text || '').slice(0, 50000), listDate);
     const add = db.prepare('INSERT INTO shopping_list_items (shopping_list_id, product_id, name, category, brand, weight, required_quantity, available_quantity, missing_quantity, unit) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
     items.forEach(item => add.run(list.lastInsertRowid, item.product_id, item.name, item.category, item.brand, item.weight, item.required_quantity, item.available_quantity, item.missing_quantity, item.unit));
@@ -518,35 +525,14 @@ app.delete('/api/shopping-lists/items/:id', (req, res) => {
   res.status(204).end();
 });
 
-// Zielona fajka na liście zakupów: zakupiony brak wraca od razu do magazynu
-// jako nowa partia, a pozycja znika z bieżącej listy.
+// Zielona fajka jest wyłącznie potwierdzeniem zakupu. Nie zmienia stanów
+// magazynowych: pozycja zostaje na liście jako „Kupione” i trafia do historii dnia.
 app.post('/api/shopping-lists/items/:id/complete', (req, res) => {
-  const item = db.prepare('SELECT * FROM shopping_list_items WHERE id=?').get(Number(req.params.id));
+  const item = db.prepare('SELECT i.*, s.list_date FROM shopping_list_items i JOIN shopping_lists s ON s.id=i.shopping_list_id WHERE i.id=?').get(Number(req.params.id));
   if (!item) return res.status(404).json({ error: 'Nie znaleziono tej pozycji na liście zakupów.' });
-  const quantity = Number(req.body?.quantity ?? item.missing_quantity);
-  if (!Number.isFinite(quantity) || quantity <= 0) return res.status(400).json({ error: 'Podaj prawidłową ilość zakupionego produktu.' });
-  const received = parseExpiration(req.body?.received_date) || new Date().toISOString().slice(0, 10);
-  const expiration = parseExpiration(req.body?.expiration_date);
-  db.exec('BEGIN');
-  try {
-    let product = item.product_id ? productById(item.product_id) : null;
-    if (!product) {
-      const result = db.prepare(`INSERT INTO products (name, category, brand, unit, quantity, min_quantity, expiration_date, received_date, updated_at)
-        VALUES (?, ?, ?, ?, ?, 0, ?, ?, CURRENT_TIMESTAMP)`)
-        .run(item.name, canonicalCategory(item.category), item.brand || '', item.unit || 'szt.', quantity, expiration, received);
-      product = productById(result.lastInsertRowid);
-    } else {
-      db.prepare('UPDATE products SET quantity=quantity+?, updated_at=CURRENT_TIMESTAMP WHERE id=?').run(quantity, product.id);
-    }
-    db.prepare('INSERT INTO product_batches (product_id, quantity, expiration_date, received_date) VALUES (?, ?, ?, ?)')
-      .run(product.id, quantity, expiration, received);
-    syncProductExpiryFromBatches(product.id);
-    db.prepare("INSERT INTO movements (product_id, type, quantity, note) VALUES (?, 'add', ?, 'Zakup z listy zakupów')")
-      .run(product.id, quantity);
-    db.prepare('DELETE FROM shopping_list_items WHERE id=?').run(item.id);
-    db.exec('COMMIT');
-    res.json(productById(product.id));
-  } catch (error) { db.exec('ROLLBACK'); throw error; }
+  const purchaseDate = /^\d{4}-\d{2}-\d{2}$/.test(String(req.body?.purchased_date || '')) ? req.body.purchased_date : new Date().toISOString().slice(0, 10);
+  db.prepare('UPDATE shopping_list_items SET purchased_at=CURRENT_TIMESTAMP, purchased_date=? WHERE id=?').run(purchaseDate, item.id);
+  res.json({ item_id:item.id, purchased_date:purchaseDate, message:'Pozycja została oznaczona jako kupiona. Stan magazynu nie został zmieniony.' });
 });
 
 db.exec(`CREATE TABLE IF NOT EXISTS category_images (
@@ -856,8 +842,7 @@ app.post('/api/demand/apply', (req, res) => {
       addItem.run(run.lastInsertRowid, product.id, quantity);
     }
     // Niedobory z zatwierdzonego zapotrzebowania są od razu gotowe na liście zakupów.
-    db.prepare('DELETE FROM shopping_list_items').run();
-    db.prepare('DELETE FROM shopping_lists').run();
+    clearUnpurchasedShoppingLists();
     const visibleShortages = shortages.filter(item => !isExcludedShoppingItem(item));
     const shoppingList = db.prepare('INSERT INTO shopping_lists (source_text, list_date) VALUES (?, ?)').run(String(recognized_text).slice(0, 50000), demandDate);
     const addShoppingItem = db.prepare('INSERT INTO shopping_list_items (shopping_list_id, product_id, name, category, brand, weight, required_quantity, available_quantity, missing_quantity, unit) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
@@ -881,13 +866,17 @@ function getDemandItems(runId) {
 app.get('/api/demand/daily', (req, res) => {
   const demandDate = validDemandDate(req.query.date) ? req.query.date : new Date().toISOString().slice(0, 10);
   const runs = db.prepare("SELECT id, source_name, demand_date, created_at, reversed_at FROM demand_runs WHERE COALESCE(demand_date, date(created_at))=? ORDER BY id DESC").all(demandDate);
+  const purchases = db.prepare(`SELECT i.id, i.name, i.category, i.brand, i.weight, i.missing_quantity, i.unit, i.purchased_date
+    FROM shopping_list_items i
+    WHERE COALESCE(i.purchased_date, date(i.purchased_at))=?
+    ORDER BY i.category COLLATE NOCASE, i.name COLLATE NOCASE`).all(demandDate);
   const withItems = runs.map(run => ({ ...run, items: getDemandItems(run.id) }));
   const summary = new Map();
   withItems.forEach(run => run.items.forEach(item => {
     const record = summary.get(item.product_id) || { product_id:item.product_id, name:item.name, unit:item.unit, opening_quantity:item.opening_quantity, demanded:0, corrected:0, current_quantity:item.current_quantity };
     record.demanded += item.quantity; record.corrected += item.corrected_quantity; summary.set(item.product_id, record);
   }));
-  res.json({ date:demandDate, runs:withItems, summary:[...summary.values()].sort((a,b) => a.name.localeCompare(b.name, 'pl')) });
+  res.json({ date:demandDate, runs:withItems, purchases, summary:[...summary.values()].sort((a,b) => a.name.localeCompare(b.name, 'pl')) });
 });
 app.post('/api/demand/runs/:id/correct', (req, res) => {
   const runId = Number(req.params.id);
