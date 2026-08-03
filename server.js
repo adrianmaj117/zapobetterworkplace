@@ -456,7 +456,7 @@ app.get('/api/dashboard', (req, res) => {
 app.get('/api/products', (req, res) => {
   const { search = '', category = '', sort = 'expiration' } = req.query;
   const orderBy = {
-    expiration: "CASE WHEN expiration_date IS NULL THEN 1 ELSE 0 END, expiration_date ASC",
+    expiration: "CASE WHEN expiration_date IS NULL THEN 1 ELSE 0 END, expiration_date ASC, name COLLATE NOCASE ASC",
     name: 'name COLLATE NOCASE ASC',
     quantity: 'quantity ASC',
     newest: 'created_at DESC'

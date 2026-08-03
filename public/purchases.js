@@ -64,6 +64,15 @@
     return null;
   }
 
+  function findPayableAmount(text) {
+    // Nie zgadujemy kwoty z przypadkowych liczb (np. numeru faktury).
+    // Bierzemy wyłącznie wartość bezpośrednio po „Do zapłaty” albo „Należność”.
+    const normalized = String(text || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('pl-PL');
+    const pattern = /(?:do\s*za[pb][l1i]aty|naleznosc(?:i)?)[^\d]{0,24}(\d{1,3}(?:[ .]\d{3})*[,.]\d{2}|\d+[,.]\d{2})/gi;
+    const matches = [...normalized.matchAll(pattern)];
+    return matches.length ? numberFromText(matches[matches.length - 1][1]) : null;
+  }
+
   function findInvoiceDate(text) {
     const match = String(text || '').match(/\b(\d{2})[.\/-](\d{2})[.\/-](\d{4})\b|\b(\d{4})-(\d{2})-(\d{2})\b/);
     if (!match) return '';
@@ -83,7 +92,7 @@
       const Tesseract = await loadOcr();
       const result = await Tesseract.recognize(invoiceData, 'pol+eng');
       const text = result?.data?.text || '';
-      const amount = findGrossAmount(text);
+      const amount = findPayableAmount(text);
       const invoiceDate = findInvoiceDate(text);
       const supplier = supplierFromText(text);
       if (amount !== null) document.querySelector('#purchaseAmount').value = amount.toFixed(2);

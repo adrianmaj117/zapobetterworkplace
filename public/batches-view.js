@@ -125,7 +125,12 @@
       if (!product || card.querySelector('.product-batches')) return;
       let batches = [];
       try { batches = await api(`/api/products/${product.id}/batches`); } catch (_) { return; }
-      const active = batches.filter(batch => Number(batch.quantity) > 0);
+      const active = batches.filter(batch => Number(batch.quantity) > 0).sort((a, b) => {
+        if (!a.expiration_date && !b.expiration_date) return 0;
+        if (!a.expiration_date) return 1;
+        if (!b.expiration_date) return -1;
+        return a.expiration_date.localeCompare(b.expiration_date);
+      });
       const section = document.createElement('section');
       section.className = 'product-batches';
       const rows = active.length ? active.map(batch => `
