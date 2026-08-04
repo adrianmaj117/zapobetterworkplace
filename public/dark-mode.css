@@ -1,0 +1,296 @@
+/*
+  Opt-in dark theme.  It deliberately uses the same soft green palette as the
+  warehouse, so stock, warning and action colours remain recognisable.
+*/
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --ink: #edf5ef;
+  --muted: #aabbb2;
+  --line: #30433a;
+  --paper: #101914;
+  --card: #18251e;
+  --green: #46b58d;
+  --lime: #b6dc8b;
+  --red: #ff9a91;
+  --amber: #f0ba68;
+}
+
+/* A sensible system-dark first frame before the synchronous preference script
+   applies an explicit saved selection. */
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme]) {
+    color-scheme: dark;
+    --ink: #edf5ef;
+    --muted: #aabbb2;
+    --line: #30433a;
+    --paper: #101914;
+    --card: #18251e;
+    --green: #46b58d;
+  }
+}
+
+html[data-theme="dark"] body,
+html[data-theme="dark"] .warehouse-body {
+  background: var(--paper);
+  color: var(--ink);
+}
+
+html[data-theme="dark"] .warehouse-background {
+  background: linear-gradient(90deg, #101914f2, #101914e8), url('assets/category-foods.png') center/cover;
+  opacity: .42;
+}
+
+html[data-theme="dark"] .warehouse-topbar,
+html[data-theme="dark"] .topbar {
+  background: #152019eb;
+  border-color: var(--line);
+}
+
+html[data-theme="dark"] .brand-one-line,
+html[data-theme="dark"] .warehouse-head h1,
+html[data-theme="dark"] .crumb,
+html[data-theme="dark"] h1,
+html[data-theme="dark"] h2,
+html[data-theme="dark"] h3,
+html[data-theme="dark"] strong {
+  color: var(--ink);
+}
+
+html[data-theme="dark"] .brand-home,
+html[data-theme="dark"] .icon-btn {
+  color: var(--ink);
+}
+
+html[data-theme="dark"] .small-btn,
+html[data-theme="dark"] .ghost,
+html[data-theme="dark"] .button.ghost,
+html[data-theme="dark"] .table-edit,
+html[data-theme="dark"] .table-sort,
+html[data-theme="dark"] .movement-type,
+html[data-theme="dark"] .purchase-new-preview,
+html[data-theme="dark"] .scan-barcode-button {
+  background: #1d2d25;
+  color: var(--ink);
+  border-color: #42584c;
+}
+
+html[data-theme="dark"] .small-btn:hover,
+html[data-theme="dark"] .ghost:hover,
+html[data-theme="dark"] .button.ghost:hover,
+html[data-theme="dark"] .table-edit:hover,
+html[data-theme="dark"] .movement-type:hover {
+  background: #293b31;
+}
+
+html[data-theme="dark"] .primary,
+html[data-theme="dark"] .button.primary {
+  background: #16785f;
+  color: #fff;
+  box-shadow: 0 7px 16px #00000044;
+}
+
+html[data-theme="dark"] .nearest-card,
+html[data-theme="dark"] .product-card,
+html[data-theme="dark"] .product,
+html[data-theme="dark"] .stat,
+html[data-theme="dark"] .inventory-table-card,
+html[data-theme="dark"] .daily-run,
+html[data-theme="dark"] .purchase-item,
+html[data-theme="dark"] .manual-demand-card,
+html[data-theme="dark"] .delivery-line,
+html[data-theme="dark"] .delivery-history-card,
+html[data-theme="dark"] .delivery-history-item,
+html[data-theme="dark"] .detail-history-row,
+html[data-theme="dark"] .manual-select-row,
+html[data-theme="dark"] .shopping-list-content article,
+html[data-theme="dark"] .barcode-found,
+html[data-theme="dark"] .barcode-not-found,
+html[data-theme="dark"] .purchase-budget-edit,
+html[data-theme="dark"] .selgros-card {
+  background: #18251e;
+  border-color: var(--line);
+  color: var(--ink);
+}
+
+html[data-theme="dark"] .nearest-card p,
+html[data-theme="dark"] .product-card p,
+html[data-theme="dark"] .stock small,
+html[data-theme="dark"] .path-help,
+html[data-theme="dark"] .demand-intro,
+html[data-theme="dark"] .demand-status,
+html[data-theme="dark"] .purchases-intro,
+html[data-theme="dark"] .purchase-totals span,
+html[data-theme="dark"] .purchase-item small,
+html[data-theme="dark"] .detail-history-row small,
+html[data-theme="dark"] .product-detail-main p,
+html[data-theme="dark"] .manual-product-info p,
+html[data-theme="dark"] .manual-select-row small,
+html[data-theme="dark"] .delivery-history-item small,
+html[data-theme="dark"] .selgros-help,
+html[data-theme="dark"] .empty,
+html[data-theme="dark"] .detail-empty {
+  color: var(--muted);
+}
+
+html[data-theme="dark"] .browse,
+html[data-theme="dark"] .inventory-overview,
+html[data-theme="dark"] .purchase-add,
+html[data-theme="dark"] .purchase-history,
+html[data-theme="dark"] .product-delivery-history,
+html[data-theme="dark"] .demand-preview,
+html[data-theme="dark"] .history-row,
+html[data-theme="dark"] .run-item,
+html[data-theme="dark"] .detail-history-row {
+  border-color: var(--line);
+}
+
+html[data-theme="dark"] dialog {
+  background: #17231d;
+  color: var(--ink);
+  box-shadow: 0 25px 70px #00000088;
+}
+
+html[data-theme="dark"] dialog::backdrop {
+  background: #050a08b8;
+}
+
+html[data-theme="dark"] input,
+html[data-theme="dark"] select,
+html[data-theme="dark"] textarea,
+html[data-theme="dark"] label input,
+html[data-theme="dark"] label select,
+html[data-theme="dark"] label textarea,
+html[data-theme="dark"] .actions input,
+html[data-theme="dark"] .actions select {
+  background: #101914;
+  color: var(--ink);
+  border-color: #42584c;
+}
+
+html[data-theme="dark"] input::placeholder,
+html[data-theme="dark"] textarea::placeholder {
+  color: #82948a;
+}
+
+html[data-theme="dark"] option {
+  background: #17231d;
+  color: var(--ink);
+}
+
+html[data-theme="dark"] .inventory-table-card h3,
+html[data-theme="dark"] .summary-head {
+  background: #203129;
+  color: var(--ink);
+}
+
+html[data-theme="dark"] .inventory-table-card th,
+html[data-theme="dark"] .summary-row:nth-child(odd),
+html[data-theme="dark"] .manual-select-row:hover,
+html[data-theme="dark"] .manual-summary-list article,
+html[data-theme="dark"] .purchase-totals article,
+html[data-theme="dark"] .demand-status,
+html[data-theme="dark"] .purchase-ocr-status,
+html[data-theme="dark"] .recognized-text pre,
+html[data-theme="dark"] .is-empty-batch {
+  background: #1c2b23;
+  color: var(--ink);
+}
+
+html[data-theme="dark"] .inventory-table-card td,
+html[data-theme="dark"] .summary-row span,
+html[data-theme="dark"] .inventory-table-card th,
+html[data-theme="dark"] .table-sort {
+  color: #c7d7ce;
+  border-color: var(--line);
+}
+
+html[data-theme="dark"] .inventory-table-card tbody tr[data-overview-product]:hover {
+  background: #24372d;
+}
+
+html[data-theme="dark"] .inventory-table-card .empty-stock,
+html[data-theme="dark"] .barcode-not-found {
+  background: #39211f;
+  border-color: #754540;
+}
+
+html[data-theme="dark"] .inventory-table-card .empty-stock td,
+html[data-theme="dark"] .danger-btn,
+html[data-theme="dark"] .barcode-not-found h3,
+html[data-theme="dark"] .barcode-not-found p {
+  color: #ffaaa1;
+}
+
+html[data-theme="dark"] .shopping-list-content article.is-purchased {
+  background: #183523;
+  border-color: #39784f;
+}
+
+html[data-theme="dark"] .shopping-complete {
+  background: #1d3526;
+  color: #9ee6ad;
+  border-color: #4f8a5f;
+}
+
+html[data-theme="dark"] .shopping-purchased {
+  background: #286f43;
+  color: #fff;
+}
+
+html[data-theme="dark"] .alert,
+html[data-theme="dark"] .badge.soon {
+  background: #3d3020;
+  border-color: #755a35;
+  color: #ffd391;
+}
+
+html[data-theme="dark"] .alert.expired,
+html[data-theme="dark"] .badge.expired,
+html[data-theme="dark"] .badge.low {
+  background: #412422;
+  border-color: #7d4641;
+  color: #ffaaa1;
+}
+
+html[data-theme="dark"] .badge,
+html[data-theme="dark"] .movement-type.active,
+html[data-theme="dark"] .small-btn.main {
+  background: #27462f;
+  border-color: #567a3f;
+  color: #d5f1a2;
+}
+
+html[data-theme="dark"] .local-mode-warning {
+  color: #ffe1a2;
+  background: #3e3218;
+  border-color: #7d6632;
+}
+
+html[data-theme="dark"] .local-mode-warning a {
+  color: #a9e9ba;
+}
+
+html[data-theme="dark"] .login-page {
+  background: linear-gradient(#0c1511df, #0c1511df), url('assets/category-foods.png') center/cover;
+}
+
+html[data-theme="dark"] .login-card {
+  background: #17231d;
+  box-shadow: 0 20px 60px #00000088;
+}
+
+html[data-theme="dark"] .login-card h1,
+html[data-theme="dark"] .login-card p,
+html[data-theme="dark"] .login-card small {
+  color: var(--ink);
+}
+
+/* Respect users who asked their operating system to minimise visual motion. */
+@media (prefers-reduced-motion: reduce) {
+  html[data-theme="dark"] *,
+  html[data-theme="dark"] *::before,
+  html[data-theme="dark"] *::after {
+    transition-duration: .01ms !important;
+    animation-duration: .01ms !important;
+  }
+}
