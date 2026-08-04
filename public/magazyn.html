@@ -32,6 +32,7 @@
     <button type="button" id="selgrosCard" class="selgros-open" aria-haspopup="dialog">SELGROS</button>
     <button type="button" id="purchases" class="small-btn purchases-open" aria-haspopup="dialog">Zakupy</button>
     <div class="head-buttons">
+      <button id="users" class="small-btn users-open" type="button" hidden>Użytkownicy</button>
       <button id="showInventory" class="small-btn">▦ Pokaż stany</button>
       <button id="demandHistory" class="small-btn">▤ Historia dnia</button>
       <button id="shoppingList" class="small-btn">☷ Lista zakupów</button>
@@ -533,6 +534,23 @@
       } catch (error) { alert(error.message); }
     };
   </script>
+  <dialog id="usersDialog" class="users-dialog">
+    <div class="modal-head"><div><p class="eyebrow">ADMINISTRACJA</p><h2>Użytkownicy</h2></div><button type="button" id="closeUsers" class="icon-btn">×</button></div>
+    <p class="users-help">Administrator ma pełny dostęp do całego magazynu. Konta pracowników mają dostęp wyłącznie do podglądu.</p>
+    <div id="usersList" class="users-list"></div>
+    <form id="userForm" class="user-form">
+      <input id="userId" type="hidden">
+      <div class="modal-head users-form-head"><div><p class="eyebrow" id="userFormKicker">NOWE KONTO</p><h3 id="userFormTitle">Dodaj użytkownika</h3></div><button type="button" id="newUser" class="small-btn">+ Nowy</button></div>
+      <div class="form-grid">
+        <label>Imię / nazwa<input id="userDisplayName" required placeholder="np. Kasia"></label>
+        <label>Login<input id="userUsername" required autocomplete="off" placeholder="np. kasia.krakow"></label>
+        <label>Rola<select id="userRole"><option value="worker">Pracownik — podgląd</option><option value="admin">Administrator — pełen dostęp</option></select></label>
+        <label>Hasło <small id="userPasswordHint">(minimum 4 znaki)</small><input id="userPassword" required type="password" autocomplete="new-password" placeholder="Ustaw hasło"></label>
+        <label class="user-active-label"><input id="userActive" type="checkbox" checked> Konto aktywne</label>
+      </div>
+      <div class="form-actions"><button type="button" id="deleteUser" class="button ghost danger-btn" hidden>Usuń konto</button><button class="button primary" type="submit">Zapisz użytkownika</button></div>
+    </form>
+  </dialog>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js" defer></script>
   <script src="demand.js" defer></script>
   <script src="history.js" defer></script>
@@ -541,5 +559,6 @@
   <script src="description-demand.js" defer></script>
   <script src="demand-menu.js" defer></script>
   <script src="fruit-category.js" defer></script>
+  <script src="users.js" defer></script>
 </body>
 </html>

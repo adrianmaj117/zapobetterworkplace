@@ -13,7 +13,8 @@ if (dbPath !== bundledDbPath && !fs.existsSync(dbPath) && fs.existsSync(bundledD
   fs.copyFileSync(bundledDbPath, dbPath);
 }
 const db = new DatabaseSync(dbPath);
-const sessions = new Set();
+const sessions = new Map();
+const passwordHash = value => crypto.createHash('sha256').update(String(value || '')).digest('hex');
 
 db.exec('PRAGMA journal_mode = WAL');
 db.exec(`
@@ -80,6 +81,20 @@ db.exec(`CREATE TABLE IF NOT EXISTS app_settings (
   value TEXT NOT NULL,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 )`);
+db.exec(`CREATE TABLE IF NOT EXISTS users (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  display_name TEXT NOT NULL,
+  password_hash TEXT NOT NULL,
+  role TEXT NOT NULL DEFAULT 'worker' CHECK(role IN ('admin', 'worker')),
+  active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+)`);
+if (!db.prepare('SELECT id FROM users WHERE username=?').get('adminkrakow')) {
+  db.prepare('INSERT INTO users (username, display_name, password_hash, role) VALUES (?, ?, ?, ?)')
+    .run('adminkrakow', 'Admin', passwordHash('krakowstany'), 'admin');
+}
 db.exec(`CREATE TABLE IF NOT EXISTS purchases (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   supplier TEXT NOT NULL DEFAULT 'SELGROS',
@@ -256,12 +271,88 @@ function removeEmptyLegacyCookieCategory() {
 app.use(express.json({ limit: '15mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-function authenticated(req) { return sessions.has(req.get('x-session-token')); }
+function authenticated(req) {
+  const user = sessions.get(req.get('x-session-token'));
+  if (user) req.user = user;
+  return Boolean(user);
+}
+function adminOnly(req, res, next) {
+  return req.user?.role === 'admin'
+    ? next()
+    : res.status(403).json({ error: 'Tylko administrator może zarządzać użytkownikami.' });
+}
+function publicUser(user) {
+  return { id: user.id, username: user.username, display_name: user.display_name, role: user.role, active: Boolean(user.active), created_at: user.created_at };
+}
 app.post('/api/login', (req, res) => {
-  if (req.body.username !== 'adminkrakow' || req.body.password !== 'krakowstany') return res.status(401).json({ error: 'Nieprawidłowy login lub hasło.' });
-  const token = crypto.randomBytes(24).toString('hex'); sessions.add(token); res.json({ token });
+  const username = String(req.body?.username || '').trim();
+  const user = db.prepare('SELECT * FROM users WHERE username=?').get(username);
+  if (!user || user.password_hash !== passwordHash(req.body?.password) || !user.active) return res.status(401).json({ error: 'Nieprawidłowy login lub hasło.' });
+  const token = crypto.randomBytes(24).toString('hex');
+  const sessionUser = publicUser(user);
+  sessions.set(token, sessionUser);
+  res.json({ token, user: sessionUser });
 });
 app.use('/api', (req, res, next) => authenticated(req) ? next() : res.status(401).json({ error: 'Zaloguj się, aby zobaczyć magazyn.' }));
+
+app.use('/api', (req, res, next) => {
+  if (req.user?.role !== 'admin' && req.method !== 'GET') return res.status(403).json({ error: 'To konto ma dostęp wyłącznie do podglądu. Poproś administratora o wykonanie tej zmiany.' });
+  next();
+});
+app.get('/api/session', (req, res) => res.json({ user: req.user }));
+app.get('/api/users', adminOnly, (req, res) => {
+  res.json(db.prepare('SELECT id, username, display_name, role, active, created_at FROM users ORDER BY role DESC, display_name COLLATE NOCASE, username COLLATE NOCASE').all().map(publicUser));
+});
+app.post('/api/users', adminOnly, (req, res) => {
+  const username = String(req.body?.username || '').trim().toLowerCase();
+  const displayName = String(req.body?.display_name || '').trim().slice(0, 80) || username;
+  const password = String(req.body?.password || '');
+  const role = req.body?.role === 'admin' ? 'admin' : 'worker';
+  if (!/^[a-z0-9._-]{3,40}$/i.test(username)) return res.status(400).json({ error: 'Login musi mieć od 3 do 40 znaków (litery, cyfry, kropka, myślnik lub podkreślenie).' });
+  if (password.length < 4) return res.status(400).json({ error: 'Hasło musi mieć co najmniej 4 znaki.' });
+  try {
+    const result = db.prepare('INSERT INTO users (username, display_name, password_hash, role) VALUES (?, ?, ?, ?)').run(username, displayName, passwordHash(password), role);
+    res.status(201).json(publicUser(db.prepare('SELECT * FROM users WHERE id=?').get(result.lastInsertRowid)));
+  } catch (error) {
+    res.status(409).json({ error: 'Taki login już istnieje.' });
+  }
+});
+app.put('/api/users/:id', adminOnly, (req, res) => {
+  const id = Number(req.params.id);
+  const existing = db.prepare('SELECT * FROM users WHERE id=?').get(id);
+  if (!existing) return res.status(404).json({ error: 'Nie znaleziono użytkownika.' });
+  const username = String(req.body?.username || existing.username).trim().toLowerCase();
+  const displayName = String(req.body?.display_name || '').trim().slice(0, 80) || username;
+  const role = req.body?.role === 'admin' ? 'admin' : 'worker';
+  const active = req.body?.active === false ? 0 : 1;
+  const password = String(req.body?.password || '');
+  if (!/^[a-z0-9._-]{3,40}$/i.test(username)) return res.status(400).json({ error: 'Nieprawidłowy login.' });
+  if (password && password.length < 4) return res.status(400).json({ error: 'Hasło musi mieć co najmniej 4 znaki.' });
+  const adminCount = db.prepare("SELECT COUNT(*) AS count FROM users WHERE role='admin' AND active=1").get().count;
+  if (existing.role === 'admin' && existing.active && (role !== 'admin' || !active) && adminCount <= 1) return res.status(400).json({ error: 'Musi pozostać co najmniej jeden aktywny administrator.' });
+  try {
+    db.prepare('UPDATE users SET username=?, display_name=?, password_hash=?, role=?, active=?, updated_at=CURRENT_TIMESTAMP WHERE id=?')
+      .run(username, displayName, password ? passwordHash(password) : existing.password_hash, role, active, id);
+    const updated = db.prepare('SELECT * FROM users WHERE id=?').get(id);
+    for (const [sessionToken, session] of sessions) if (session.id === id) sessions.set(sessionToken, publicUser(updated));
+    res.json(publicUser(updated));
+  } catch (error) {
+    res.status(409).json({ error: 'Taki login już istnieje.' });
+  }
+});
+app.delete('/api/users/:id', adminOnly, (req, res) => {
+  const id = Number(req.params.id);
+  const user = db.prepare('SELECT * FROM users WHERE id=?').get(id);
+  if (!user) return res.status(404).json({ error: 'Nie znaleziono użytkownika.' });
+  if (user.id === req.user.id) return res.status(400).json({ error: 'Nie możesz usunąć własnego konta.' });
+  const adminCount = db.prepare("SELECT COUNT(*) AS count FROM users WHERE role='admin' AND active=1").get().count;
+  if (user.role === 'admin' && user.active && adminCount <= 1) return res.status(400).json({ error: 'Musi pozostać co najmniej jeden aktywny administrator.' });
+  db.prepare('DELETE FROM users WHERE id=?').run(id);
+  for (const [sessionToken, session] of sessions) if (session.id === id) sessions.delete(sessionToken);
+  res.status(204).end();
+});
+
+
 
 function productById(id) {
   return db.prepare('SELECT * FROM products WHERE id = ?').get(id);
