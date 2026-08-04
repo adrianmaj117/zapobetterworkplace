@@ -11,6 +11,7 @@
   let invoiceData = '';
   let ocrLoader = null;
   let editingPurchaseId = 0;
+  let editingPurchasePassword = '';
   let savedPurchases = [];
 
   function invoiceImage(file) {
@@ -159,7 +160,8 @@
         invoice_date: document.querySelector('#purchaseDate').value,
         gross_amount: amountValue(document.querySelector('#purchaseAmount').value),
         note: document.querySelector('#purchaseNote').value,
-        image_data: invoiceData || (editingPurchaseId ? null : await invoiceImage(file))
+        image_data: invoiceData || (editingPurchaseId ? null : await invoiceImage(file)),
+        password: editingPurchaseId ? editingPurchasePassword : undefined
       };
       await api(editingPurchaseId ? `/api/purchases/${editingPurchaseId}` : '/api/purchases', { method: editingPurchaseId ? 'PUT' : 'POST', body: JSON.stringify(body) });
       resetPurchaseForm();
@@ -181,7 +183,11 @@
     if (editButton) {
       const item = savedPurchases.find(entry => Number(entry.id) === Number(editButton.dataset.purchaseEdit));
       if (!item) return;
+      const password = prompt('Wpisz hasło, aby edytować fakturę:');
+      if (password === null) return;
+      if (password !== '123') { alert('Nieprawidłowe hasło.'); return; }
       editingPurchaseId = item.id;
+      editingPurchasePassword = password;
       invoiceData = '';
       document.querySelector('.purchase-add h3').textContent = 'Edytuj fakturę';
       document.querySelector('#purchaseSupplier').value = item.supplier;
@@ -197,12 +203,16 @@
     }
     const button = event.target.closest('[data-purchase-delete]');
     if (!button || !confirm('Usunąć ten zapis faktury?')) return;
-    try { await api(`/api/purchases/${button.dataset.purchaseDelete}`, { method: 'DELETE' }); await refresh(); }
+    const password = prompt('Wpisz hasło, aby trwale usunąć fakturę:');
+    if (password === null) return;
+    if (password !== '123') { alert('Nieprawidłowe hasło.'); return; }
+    try { await api(`/api/purchases/${button.dataset.purchaseDelete}`, { method: 'DELETE', body: JSON.stringify({ password }) }); await refresh(); }
     catch (error) { alert(error.message); }
   });
 
   function resetPurchaseForm() {
     editingPurchaseId = 0;
+    editingPurchasePassword = '';
     invoiceData = '';
     form.reset();
     document.querySelector('.purchase-add h3').textContent = 'Dodaj fakturę';

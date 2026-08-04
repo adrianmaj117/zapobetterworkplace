@@ -304,6 +304,7 @@ app.post('/api/purchases', (req, res) => {
 });
 
 app.put('/api/purchases/:id', (req, res) => {
+  if (req.body?.password !== '123') return res.status(403).json({ error: 'Wpisz prawidłowe hasło, aby edytować fakturę.' });
   const id = Number(req.params.id);
   const existing = db.prepare('SELECT * FROM purchases WHERE id=?').get(id);
   if (!existing) return res.status(404).json({ error: 'Nie znaleziono tej faktury.' });
@@ -318,6 +319,7 @@ app.put('/api/purchases/:id', (req, res) => {
 });
 
 app.delete('/api/purchases/:id', (req, res) => {
+  if (req.body?.password !== '123') return res.status(403).json({ error: 'Wpisz prawidłowe hasło, aby usunąć fakturę.' });
   const result = db.prepare('DELETE FROM purchases WHERE id=?').run(Number(req.params.id));
   if (!result.changes) return res.status(404).json({ error: 'Nie znaleziono tego zakupu.' });
   res.status(204).end();
