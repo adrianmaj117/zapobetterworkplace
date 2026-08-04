@@ -7,7 +7,7 @@
   const status = document.querySelector('#barcodeStatus');
   const result = document.querySelector('#barcodeResult');
   const addMissing = document.querySelector('#barcodeAddMissing');
-  let stream = null, detector = null, timer = null, currentCode = '', zxingControls = null, captureTarget = '', addDeliveryFlow = false;
+  let stream = null, detector = null, timer = null, currentCode = '', zxingControls = null, captureTarget = '', addDeliveryFlow = false, groupedDeliveryFlow = false;
   const skipToManual = document.querySelector('#barcodeSkipToManual');
 
   const cleanCode = value => String(value || '').trim().replace(/[^0-9A-Za-z-]/g, '').toUpperCase();
@@ -50,9 +50,11 @@
       const product = all.find(item => cleanCode(item.barcode) === code);
       if (product) {
         status.textContent = 'Znaleziono artykuł. Uzupełniam nową dostawę…';
+        const addToGroup = groupedDeliveryFlow;
         stopCamera();
         dialog.close();
-        window.openAddDeliveryForm?.(product, code);
+        if (addToGroup) window.openGroupedDeliveryItem?.(product, code);
+        else window.openAddDeliveryForm?.(product, code);
         return;
       }
       status.textContent = `Nie ma artykułu z kodem ${code}. Wpisz dane nowego produktu.`;
@@ -149,6 +151,7 @@
   }
   function openNewDeliveryBarcode() {
     addDeliveryFlow = true;
+    groupedDeliveryFlow = false;
     captureTarget = '';
     reset();
     skipToManual.hidden = false;
@@ -158,6 +161,18 @@
     startCamera();
   }
   window.openBarcodeForNewDelivery = openNewDeliveryBarcode;
+  function openGroupedDeliveryBarcode() {
+    addDeliveryFlow = true;
+    groupedDeliveryFlow = true;
+    captureTarget = '';
+    reset();
+    skipToManual.hidden = false;
+    dialog.querySelector('h2').textContent = 'Zeskanuj produkt z dostawy';
+    status.textContent = 'Zeskanuj kod produktu. Nieznany produkt możesz dodać standardowym formularzem.';
+    dialog.showModal();
+    startCamera();
+  }
+  window.openBarcodeForGroupedDelivery = openGroupedDeliveryBarcode;
 
   openButton.addEventListener('click', openLookup);
   document.addEventListener('click', event => {
@@ -173,5 +188,5 @@
   addMissing.addEventListener('click', addProductWithCode);
   skipToManual.addEventListener('click', () => { dialog.close(); window.openAddDeliveryForm?.(null, ''); });
   ['closeBarcode', 'cancelBarcode'].forEach(id => document.querySelector(`#${id}`).addEventListener('click', () => dialog.close()));
-  dialog.addEventListener('close', () => { stopCamera(); captureTarget = ''; addDeliveryFlow = false; });
+  dialog.addEventListener('close', () => { stopCamera(); captureTarget = ''; addDeliveryFlow = false; groupedDeliveryFlow = false; });
 })();

@@ -105,6 +105,24 @@ db.exec(`CREATE TABLE IF NOT EXISTS purchases (
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 )`);
 db.exec(`
+  CREATE TABLE IF NOT EXISTS deliveries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    supplier TEXT NOT NULL,
+    received_date TEXT NOT NULL,
+    note TEXT DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE TABLE IF NOT EXISTS delivery_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    delivery_id INTEGER NOT NULL,
+    product_id INTEGER NOT NULL,
+    quantity REAL NOT NULL CHECK(quantity > 0),
+    expiration_date TEXT,
+    FOREIGN KEY(delivery_id) REFERENCES deliveries(id) ON DELETE CASCADE,
+    FOREIGN KEY(product_id) REFERENCES products(id) ON DELETE RESTRICT
+  );
+`);
+db.exec(`
   CREATE TABLE IF NOT EXISTS demand_runs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     source_name TEXT DEFAULT '',
@@ -563,6 +581,66 @@ app.get('/api/products', (req, res) => {
     ORDER BY ${orderBy}
   `).all({ search: `%${search.trim()}%`, category });
   res.json(rows);
+});
+
+function deliveryById(id) {
+  const delivery = db.prepare('SELECT * FROM deliveries WHERE id=?').get(id);
+  if (!delivery) return null;
+  delivery.items = db.prepare(`
+    SELECT di.id, di.product_id, di.quantity, di.expiration_date,
+      p.name, p.category, p.brand, p.unit, p.weight_value, p.weight_unit, p.image_data
+    FROM delivery_items di
+    LEFT JOIN products p ON p.id=di.product_id
+    WHERE di.delivery_id=?
+    ORDER BY di.id ASC
+  `).all(id);
+  return delivery;
+}
+
+app.get('/api/deliveries', (req, res) => {
+  const rows = db.prepare('SELECT id FROM deliveries ORDER BY received_date DESC, id DESC LIMIT 100').all();
+  res.json(rows.map(row => deliveryById(row.id)));
+});
+
+// Zatwierdzenie grupowej dostawy: wszystkie partie i historia powstają
+// w jednej transakcji, więc nie ma ryzyka zapisania tylko części produktów.
+app.post('/api/deliveries', (req, res) => {
+  const supplier = String(req.body?.supplier || '').trim();
+  const received = parseExpiration(req.body?.received_date) || new Date().toISOString().slice(0, 10);
+  const note = String(req.body?.note || '').trim().slice(0, 1000);
+  const items = (Array.isArray(req.body?.items) ? req.body.items : []).map(item => ({
+    product_id: Number(item.product_id),
+    quantity: Number(item.quantity),
+    expiration_date: parseExpiration(item.expiration_date)
+  })).filter(item => Number.isInteger(item.product_id) && Number.isFinite(item.quantity) && item.quantity > 0);
+  if (!supplier) return res.status(400).json({ error: 'Podaj nazwę dostawy lub dostawcy.' });
+  if (!items.length) return res.status(400).json({ error: 'Dodaj co najmniej jeden artykuł do dostawy.' });
+
+  db.exec('BEGIN');
+  try {
+    const createDelivery = db.prepare('INSERT INTO deliveries (supplier, received_date, note) VALUES (?, ?, ?)');
+    const delivery = createDelivery.run(supplier, received, note);
+    const addItem = db.prepare('INSERT INTO delivery_items (delivery_id, product_id, quantity, expiration_date) VALUES (?, ?, ?, ?)');
+    const updateProduct = db.prepare('UPDATE products SET quantity=quantity+?, received_date=?, updated_at=CURRENT_TIMESTAMP WHERE id=?');
+    const addBatch = db.prepare('INSERT INTO product_batches (product_id, quantity, expiration_date, received_date) VALUES (?, ?, ?, ?)');
+    const addMovement = db.prepare("INSERT INTO movements (product_id, type, quantity, note) VALUES (?, 'add', ?, ?)");
+    const touched = new Set();
+    for (const item of items) {
+      const product = productById(item.product_id);
+      if (!product) throw new Error('Jeden z produktów nie istnieje już w magazynie. Odśwież stronę i spróbuj ponownie.');
+      addItem.run(delivery.lastInsertRowid, product.id, item.quantity, item.expiration_date);
+      updateProduct.run(item.quantity, received, product.id);
+      addBatch.run(product.id, item.quantity, item.expiration_date, received);
+      addMovement.run(product.id, item.quantity, `Dostawa: ${supplier}`);
+      touched.add(product.id);
+    }
+    touched.forEach(id => syncProductExpiryFromBatches(id));
+    db.exec('COMMIT');
+    res.status(201).json(deliveryById(Number(delivery.lastInsertRowid)));
+  } catch (error) {
+    db.exec('ROLLBACK');
+    res.status(400).json({ error: error.message || 'Nie udało się zapisać dostawy.' });
+  }
 });
 
 app.get('/api/categories', (req, res) => {

@@ -32,6 +32,8 @@
     <button type="button" id="selgrosCard" class="selgros-open" aria-haspopup="dialog">SELGROS</button>
     <button type="button" id="purchases" class="small-btn purchases-open" aria-haspopup="dialog">Zakupy</button>
     <div class="head-buttons">
+      <button id="delivery" class="small-btn" type="button">Dostawa</button>
+      <button id="deliveryHistory" class="small-btn" type="button">Historia dostaw</button>
       <button id="users" class="small-btn users-open" type="button" hidden>Użytkownicy</button>
       <button id="showInventory" class="small-btn">▦ Pokaż stany</button>
       <button id="demandHistory" class="small-btn">▤ Historia dnia</button>
@@ -534,6 +536,33 @@
       } catch (error) { alert(error.message); }
     };
   </script>
+  <dialog id="deliveryDialog" class="delivery-dialog">
+    <form id="deliveryForm">
+      <div class="modal-head"><div><p class="eyebrow">GRUPOWE PRZYJĘCIE</p><h2>Nowa dostawa</h2></div><button type="button" id="closeDelivery" class="icon-btn">×</button></div>
+      <p class="delivery-intro">Zeskanuj kolejne produkty. Stan magazynowy zmieni się dopiero po zatwierdzeniu całej dostawy.</p>
+      <div class="form-grid delivery-meta">
+        <label>Nazwa dostawy / dostawca<input id="deliverySupplier" required maxlength="160" placeholder="np. SELGROS, Hebar, Sady Wincenta"></label>
+        <label>Data przyjęcia<input id="deliveryReceived" type="date" required></label>
+        <label class="full">Notatka <small>(opcjonalnie)</small><input id="deliveryNote" maxlength="1000" placeholder="np. dostawa poranna"></label>
+      </div>
+      <section class="delivery-lines-section"><div class="delivery-lines-head"><h3>Produkty w dostawie</h3><button type="button" id="scanDeliveryProduct" class="button primary">▥ Skanuj produkt</button></div><div id="deliveryLines" class="delivery-lines"></div></section>
+      <div class="form-actions"><button type="button" id="cancelDelivery" class="button ghost">Anuluj</button><button type="submit" id="confirmDelivery" class="button primary" disabled>Potwierdź dostawę</button></div>
+    </form>
+  </dialog>
+  <dialog id="deliveryItemDialog" class="delivery-item-dialog">
+    <form id="deliveryItemForm">
+      <div class="modal-head"><div><p class="eyebrow">ZESKANOWANY ARTYKUŁ</p><h2>Dodaj do dostawy</h2></div><button type="button" id="closeDeliveryItem" class="icon-btn">×</button></div>
+      <section id="deliveryItemPreview" class="delivery-item-preview"></section>
+      <div class="form-grid"><label>Ilość<input id="deliveryItemQuantity" type="number" min="0.001" step="any" required></label><label>Termin ważności<input id="deliveryItemExpiry" type="date" required></label></div>
+      <div class="form-actions"><button type="button" id="cancelDeliveryItem" class="button ghost">Wróć</button><button type="submit" class="button primary">Dodaj do dostawy</button></div>
+    </form>
+  </dialog>
+  <dialog id="deliveryHistoryDialog" class="delivery-history-dialog">
+    <div class="modal-head"><div><p class="eyebrow">ARCHIWUM</p><h2>Historia dostaw</h2></div><button type="button" id="closeDeliveryHistory" class="icon-btn">×</button></div>
+    <p class="delivery-intro">Każda zatwierdzona dostawa pokazuje dostawcę, datę, produkty, ilości i terminy ważności.</p>
+    <div id="deliveryHistoryList" class="delivery-history-list"></div>
+    <div class="form-actions"><button type="button" id="closeDeliveryHistoryBottom" class="button ghost">Zamknij</button></div>
+  </dialog>
   <dialog id="usersDialog" class="users-dialog">
     <div class="modal-head"><div><p class="eyebrow">ADMINISTRACJA</p><h2>Użytkownicy</h2></div><button type="button" id="closeUsers" class="icon-btn">×</button></div>
     <p class="users-help">Administrator ma pełny dostęp do całego magazynu. Konta pracowników mają dostęp wyłącznie do podglądu.</p>
@@ -560,5 +589,6 @@
   <script src="demand-menu.js" defer></script>
   <script src="fruit-category.js" defer></script>
   <script src="users.js" defer></script>
+  <script src="delivery.js" defer></script>
 </body>
 </html>
