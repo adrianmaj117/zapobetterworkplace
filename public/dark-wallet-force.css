@@ -1,0 +1,76 @@
+/* Ostatnia warstwa kontrastu dla okna Rozliczenie.
+   Obsługuje zarówno starszy zapis data-theme, jak i aktualną klasę dark-theme. */
+html.dark-theme .wallet-dialog,
+html[data-theme="dark"] .wallet-dialog,
+html.dark-theme .wallet-confirm-dialog,
+html[data-theme="dark"] .wallet-confirm-dialog {
+  background: #102018 !important;
+  border-color: #659477 !important;
+  color: #f4fbf6 !important;
+}
+
+html.dark-theme .wallet-dialog .modal-head,
+html[data-theme="dark"] .wallet-dialog .modal-head,
+html.dark-theme .wallet-confirm-dialog .modal-head,
+html[data-theme="dark"] .wallet-confirm-dialog .modal-head {
+  background: #1e3327 !important;
+  border-color: #659477 !important;
+}
+
+html.dark-theme .wallet-dialog .modal-head h2,
+html[data-theme="dark"] .wallet-dialog .modal-head h2,
+html.dark-theme .wallet-confirm-dialog .modal-head h2,
+html[data-theme="dark"] .wallet-confirm-dialog .modal-head h2,
+html.dark-theme .wallet-dialog h3,
+html[data-theme="dark"] .wallet-dialog h3,
+html.dark-theme .wallet-user b,
+html[data-theme="dark"] .wallet-user b,
+html.dark-theme .wallet-user strong,
+html[data-theme="dark"] .wallet-user strong {
+  color: #ffffff !important;
+  opacity: 1 !important;
+}
+
+html.dark-theme .wallet-dialog .users-help,
+html[data-theme="dark"] .wallet-dialog .users-help,
+html.dark-theme .wallet-user small,
+html[data-theme="dark"] .wallet-user small,
+html.dark-theme .wallet-wait,
+html[data-theme="dark"] .wallet-wait {
+  color: #d5e6da !important;
+  opacity: 1 !important;
+}
+
+html.dark-theme .wallet-user,
+html[data-theme="dark"] .wallet-user,
+html.dark-theme .wallet-pending,
+html[data-theme="dark"] .wallet-pending {
+  background: #213a2b !important;
+  border: 1px solid #69927a !important;
+  color: #f4fbf6 !important;
+}
+
+html.dark-theme .wallet-user form input,
+html[data-theme="dark"] .wallet-user form input,
+html.dark-theme .wallet-pending input,
+html[data-theme="dark"] .wallet-pending input {
+  background: #0a120d !important;
+  border-color: #83ac91 !important;
+  color: #ffffff !important;
+}
+
+html.dark-theme .wallet-user form input::placeholder,
+html[data-theme="dark"] .wallet-user form input::placeholder,
+html.dark-theme .wallet-pending input::placeholder,
+html[data-theme="dark"] .wallet-pending input::placeholder {
+  color: #c2d6c8 !important;
+  opacity: 1;
+}
+
+html.dark-theme .wallet-user .button,
+html[data-theme="dark"] .wallet-user .button,
+html.dark-theme .wallet-pending .button,
+html[data-theme="dark"] .wallet-pending .button {
+  color: #ffffff !important;
+  opacity: 1 !important;
+}

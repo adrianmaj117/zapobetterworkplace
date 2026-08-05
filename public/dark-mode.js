@@ -49,6 +49,10 @@
   function applyTheme(theme, options = {}) {
     const validTheme = theme === DARK || theme === LIGHT ? theme : selectedTheme();
     root.dataset.theme = validTheme;
+    // Klasa jest dodatkowym, niezależnym znacznikiem dla modułów ładowanych
+    // później (np. Portfeli zespołu). Dzięki temu ich kontrast nie zależy od
+    // kolejności arkuszy stylów.
+    root.classList.toggle('dark-theme', validTheme === DARK);
     root.style.colorScheme = validTheme;
 
     const meta = colourMeta();
