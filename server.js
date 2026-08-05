@@ -504,6 +504,76 @@ function productIdFrom(value) {
   return Number.isInteger(id) && id > 0 ? id : null;
 }
 
+// Każdy portfel jest osobny. Dawne faktury oraz środki należą do Adriana,
+// dzięki czemu nie mieszają się ze środkami Admina ani Lidera.
+function ensureAdrianWallet() {
+  const adrian = db.prepare("SELECT * FROM users WHERE username='adrian'").get();
+  if (!adrian) return;
+  const legacy = Number(db.prepare("SELECT value FROM app_settings WHERE key='purchase_budget'").get()?.value || 0);
+  const legacySpent = Number(db.prepare('SELECT COALESCE(SUM(gross_amount),0) AS total FROM purchases WHERE wallet_user_id IS NULL').get().total || 0);
+  if (!walletFor(adrian.id)) db.prepare('INSERT INTO wallets (user_id, balance, active) VALUES (?, ?, 1)').run(adrian.id, Math.max(0, legacy - legacySpent));
+  db.prepare('UPDATE purchases SET wallet_user_id=? WHERE wallet_user_id IS NULL').run(adrian.id);
+}
+ensureAdrianWallet();
+function personalPurchaseSummary(userId) {
+  const wallet = walletFor(userId);
+  const spent = Number(db.prepare('SELECT COALESCE(SUM(gross_amount),0) AS total FROM purchases WHERE wallet_user_id=?').get(userId).total || 0);
+  const remaining = Number(wallet?.balance || 0);
+  return { budget: remaining + spent, spent, remaining, wallet_active: Boolean(wallet?.active), wallet_id: wallet?.id || null };
+}
+function canManagePurchase(user, purchase) { return isFullAdmin(user) || (user.role === 'procurement' && purchase.wallet_user_id === user.id); }
+app.get('/api/purchases', allow('purchases'), (req, res) => {
+  const full = isFullAdmin(req.user);
+  const purchases = db.prepare(`SELECT p.*, u.display_name AS wallet_owner FROM purchases p LEFT JOIN users u ON u.id=p.wallet_user_id
+    ${full ? '' : 'WHERE p.wallet_user_id=?'} ORDER BY COALESCE(p.invoice_date, date(p.created_at)) DESC, p.id DESC`).all(...(full ? [] : [req.user.id]));
+  res.json({ ...personalPurchaseSummary(req.user.id), purchases: purchases.map(item => ({ ...item, can_manage: canManagePurchase(req.user, item) })) });
+});
+app.put('/api/purchases/budget', allow('finance'), (req, res) => {
+  const amount = Number(req.body?.amount); const own = db.prepare('SELECT password_hash FROM users WHERE id=?').get(req.user.id);
+  if (passwordHash(req.body?.password) !== own?.password_hash) return res.status(403).json({ error: 'Nieprawidłowe hasło.' });
+  if (!Number.isFinite(amount) || amount < 0) return res.status(400).json({ error: 'Podaj prawidłową kwotę.' });
+  const wallet = walletFor(req.user.id);
+  if (wallet) db.prepare('UPDATE wallets SET balance=?, active=1, updated_at=CURRENT_TIMESTAMP WHERE id=?').run(amount, wallet.id);
+  else db.prepare('INSERT INTO wallets (user_id, balance, active) VALUES (?, ?, 1)').run(req.user.id, amount);
+  res.json(personalPurchaseSummary(req.user.id));
+});
+app.post('/api/purchases', allow('purchases'), (req, res) => {
+  const amount = Number(req.body?.gross_amount); const wallet = walletFor(req.user.id);
+  if (!wallet?.active) return res.status(403).json({ error: 'Najpierw zaakceptuj swój portfel.' });
+  if (!Number.isFinite(amount) || amount < 0) return res.status(400).json({ error: 'Podaj prawidłową kwotę brutto.' });
+  if (wallet.balance < amount) return res.status(400).json({ error: `Brakuje środków w Twoim portfelu. Dostępne: ${wallet.balance.toFixed(2)} zł.` });
+  const image = req.body?.image_data || null;
+  if (image && !String(image).startsWith('data:image/')) return res.status(400).json({ error: 'Zdjęcie faktury ma nieprawidłowy format.' });
+  const result = db.prepare('INSERT INTO purchases (supplier, invoice_date, gross_amount, note, image_data, wallet_user_id) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(String(req.body?.supplier || 'SELGROS').trim().slice(0,120) || 'SELGROS', parseExpiration(req.body?.invoice_date), amount, String(req.body?.note || '').trim().slice(0,1000), image, req.user.id);
+  db.prepare('UPDATE wallets SET balance=balance-?, updated_at=CURRENT_TIMESTAMP WHERE id=?').run(amount, wallet.id);
+  res.status(201).json(db.prepare('SELECT * FROM purchases WHERE id=?').get(result.lastInsertRowid));
+});
+app.put('/api/purchases/:id', allow('purchases'), (req, res) => {
+  const existing = db.prepare('SELECT * FROM purchases WHERE id=?').get(Number(req.params.id));
+  if (!existing) return res.status(404).json({ error: 'Nie znaleziono tej faktury.' });
+  if (!canManagePurchase(req.user, existing)) return res.status(403).json({ error: 'Możesz tylko przeglądać tę fakturę.' });
+  const own = db.prepare('SELECT password_hash FROM users WHERE id=?').get(req.user.id);
+  if (passwordHash(req.body?.password) !== own?.password_hash) return res.status(403).json({ error: 'Nieprawidłowe hasło.' });
+  const amount = Number(req.body?.gross_amount); const supplier = String(req.body?.supplier || '').trim().slice(0,120); const image = req.body?.image_data || existing.image_data || null;
+  if (!supplier || !Number.isFinite(amount) || amount < 0) return res.status(400).json({ error: 'Uzupełnij dostawcę oraz kwotę.' });
+  const ownerWallet = walletFor(existing.wallet_user_id); const difference = amount - existing.gross_amount;
+  if (difference > 0 && ownerWallet.balance < difference) return res.status(400).json({ error: 'Na portfelu właściciela brakuje środków na tę zmianę.' });
+  db.prepare('UPDATE purchases SET supplier=?, invoice_date=?, gross_amount=?, note=?, image_data=? WHERE id=?').run(supplier, parseExpiration(req.body?.invoice_date), amount, String(req.body?.note || '').trim().slice(0,1000), image, existing.id);
+  db.prepare('UPDATE wallets SET balance=balance-?, updated_at=CURRENT_TIMESTAMP WHERE id=?').run(difference, ownerWallet.id);
+  res.json(db.prepare('SELECT * FROM purchases WHERE id=?').get(existing.id));
+});
+app.delete('/api/purchases/:id', allow('purchases'), (req, res) => {
+  const existing = db.prepare('SELECT * FROM purchases WHERE id=?').get(Number(req.params.id));
+  if (!existing) return res.status(404).json({ error: 'Nie znaleziono tej faktury.' });
+  if (!canManagePurchase(req.user, existing)) return res.status(403).json({ error: 'Możesz tylko przeglądać tę fakturę.' });
+  const own = db.prepare('SELECT password_hash FROM users WHERE id=?').get(req.user.id);
+  if (passwordHash(req.body?.password) !== own?.password_hash) return res.status(403).json({ error: 'Nieprawidłowe hasło.' });
+  db.prepare('DELETE FROM purchases WHERE id=?').run(existing.id);
+  const wallet = walletFor(existing.wallet_user_id); if (wallet) db.prepare('UPDATE wallets SET balance=balance+?, updated_at=CURRENT_TIMESTAMP WHERE id=?').run(existing.gross_amount, wallet.id);
+  res.status(204).end();
+});
+
 function purchaseSummary() {
   const budgetSetting = db.prepare("SELECT value FROM app_settings WHERE key='purchase_budget'").get();
   const budget = Number(budgetSetting?.value || 0);

@@ -120,15 +120,18 @@
         ${item.image_data ? `<button type="button" class="purchase-image-open" data-invoice-image="${item.id}" title="Pokaż zdjęcie faktury w pełnym widoku"><img src="${item.image_data}" alt="Zdjęcie faktury"></button>` : '<div class="purchase-no-image">Faktura</div>'}
         <div><b>${safe(item.supplier)}</b><small>${item.invoice_date ? date(item.invoice_date) : 'brak daty'}${item.note ? ` · ${safe(item.note)}` : ''}</small></div>
         <strong>${money(item.gross_amount)}</strong>
-        <button type="button" class="small-btn purchase-edit" data-purchase-edit="${item.id}">Edytuj</button>
-        <button type="button" class="small-btn purchase-delete" data-purchase-delete="${item.id}" title="Usuń wpis">Usuń</button>
+        ${item.can_manage ? `<button type="button" class="small-btn purchase-edit" data-purchase-edit="${item.id}">Edytuj</button><button type="button" class="small-btn purchase-delete" data-purchase-delete="${item.id}" title="Usuń wpis">Usuń</button>` : '<span class="purchase-readonly">Tylko podgląd</span>'}
       </article>`).join('') : '<p class="purchase-empty">Nie zapisano jeszcze żadnej faktury.</p>';
   }
 
   document.querySelector('#purchases').addEventListener('click', async () => {
     resetPurchaseForm();
     dialog.showModal();
-    try { await refresh(); } catch (error) { alert(error.message); }
+    try {
+      const session = await api('/api/session');
+      document.querySelector('.purchase-budget-edit').hidden = !session.capabilities?.finance;
+      await refresh();
+    } catch (error) { alert(error.message); }
   });
   document.querySelector('#closePurchases').addEventListener('click', () => dialog.close());
   ['closeInvoiceImage', 'returnInvoiceImage'].forEach(id => document.querySelector(`#${id}`).addEventListener('click', () => fullImageDialog.close()));
