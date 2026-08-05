@@ -1,0 +1,55 @@
+/* Te reguły są ładowane po panelu użytkownika, aby zachować czytelność w trybie ciemnym. */
+html[data-theme="dark"] .user-panel-dialog,
+html[data-theme="dark"] .wallet-dialog,
+html[data-theme="dark"] .wallet-confirm-dialog {
+  background: #101a15;
+  color: #edf5ef;
+}
+
+html[data-theme="dark"] .user-panel-dialog .modal-head,
+html[data-theme="dark"] .wallet-dialog .modal-head,
+html[data-theme="dark"] .wallet-confirm-dialog .modal-head {
+  background: #1c2b23;
+  border-color: #496454;
+}
+
+html[data-theme="dark"] .user-panel-dialog .modal-head h2,
+html[data-theme="dark"] .wallet-dialog .modal-head h2,
+html[data-theme="dark"] .wallet-confirm-dialog .modal-head h2,
+html[data-theme="dark"] .wallet-dialog h3,
+html[data-theme="dark"] .wallet-user b,
+html[data-theme="dark"] .wallet-user strong {
+  color: #f2f8f3;
+}
+
+html[data-theme="dark"] .wallet-dialog .users-help,
+html[data-theme="dark"] .wallet-user small,
+html[data-theme="dark"] .wallet-wait {
+  color: #c3d4c9 !important;
+}
+
+html[data-theme="dark"] .wallet-user,
+html[data-theme="dark"] .wallet-pending {
+  background: #1c2b23;
+  border-color: #4b6655;
+  color: #edf5ef;
+}
+
+html[data-theme="dark"] .wallet-user form input,
+html[data-theme="dark"] .wallet-pending input {
+  background: #0e1712;
+  border-color: #56715f;
+  color: #f1f7f2;
+}
+
+html[data-theme="dark"] .wallet-user form input::placeholder,
+html[data-theme="dark"] .wallet-pending input::placeholder {
+  color: #abc0b1;
+}
+
+html[data-theme="dark"] .wallet-user .button.ghost,
+html[data-theme="dark"] .wallet-pending .button.ghost {
+  background: #263b2f;
+  border-color: #597764;
+  color: #f1f7f2;
+}
