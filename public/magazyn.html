@@ -16,6 +16,10 @@
   <link rel="stylesheet" href="demand-match.css">
   <link rel="stylesheet" href="batches-view.css">
   <link rel="stylesheet" href="inventory-overview.css">
+  <link rel="stylesheet" href="dark-mode.css">
+  <link rel="stylesheet" href="delivery-workflow.css">
+  <link rel="stylesheet" href="shopping-workflow.css">
+  <script src="dark-mode.js"></script>
   <style>
     .tile .path-edit,.tile .image-edit{opacity:0;pointer-events:none;transition:opacity .18s ease}
     .tile:hover .path-edit,.tile:hover .image-edit,.tile:focus-within .path-edit,.tile:focus-within .image-edit{opacity:1;pointer-events:auto}
@@ -33,20 +37,20 @@
     <button type="button" id="selgrosCard" class="selgros-open" aria-haspopup="dialog">SELGROS</button>
     <button type="button" id="purchases" class="small-btn purchases-open" aria-haspopup="dialog">Zakupy</button>
     <div class="head-buttons">
-      <button id="delivery" class="small-btn" type="button">Dostawa</button>
       <button id="deliveryHistory" class="small-btn" type="button">Historia dostaw</button>
       <button id="users" class="small-btn users-open" type="button" hidden>Użytkownicy</button>
       <button id="showInventory" class="small-btn">▦ Pokaż stany</button>
       <button id="demandHistory" class="small-btn">▤ Historia dnia</button>
       <button id="shoppingList" class="small-btn">☷ Lista zakupów</button>
       <button id="download" class="small-btn">⇩ Pobierz stany</button>
+      <button id="themeToggle" class="small-btn" type="button" data-theme-auto-label></button>
       <button id="logout" class="small-btn">Wyloguj</button>
     </div>
   </header>
   <main>
     <section class="warehouse-head">
       <p class="eyebrow">STANY MAGAZYNOWE</p>
-      <div><h1>Stany magazynowe</h1><div class="warehouse-actions"><button id="manualDemand" class="button ghost demand-button">☑ Zapotrzebowanie ręczne</button><button id="demandText" class="button ghost demand-button">▤ Zapotrzebowanie z opisu</button><button id="demand" class="button ghost demand-button">▣ Zapotrzebowanie ze zdjęcia</button><button id="barcodeLookup" class="button ghost">▥ Znajdź artykuł</button><button id="add" class="button primary">＋ Dodaj artykuł</button></div></div>
+      <div><h1>Stany magazynowe</h1><div class="warehouse-actions"><button id="manualDemand" class="button ghost demand-button">☑ Zapotrzebowanie ręczne</button><button id="demandText" class="button ghost demand-button">▤ Zapotrzebowanie z opisu</button><button id="demand" class="button ghost demand-button">▣ Zapotrzebowanie ze zdjęcia</button><button id="delivery" class="button ghost">▣ Dostawa</button><button id="barcodeLookup" class="button ghost">▥ Znajdź artykuł</button><button id="add" class="button primary">＋ Dodaj artykuł</button></div></div>
     </section>
     <section>
       <h2>Najkrótsze terminy ważności</h2>
@@ -246,12 +250,18 @@
     </form>
   </dialog>
   <dialog id="shoppingListDialog" class="demand-dialog shopping-list-dialog">
-    <form method="dialog">
+    <div class="shopping-list-shell">
       <div class="modal-head"><h2>Lista zakupów</h2><button type="button" id="closeShoppingList" class="icon-btn">×</button></div>
-      <p class="demand-intro">Bieżąca lista produktów, których brakuje po ostatnim porównaniu. Aby utworzyć nową listę, wklej nowy opis i kliknij „Odśwież listę zakupów”.</p>
+      <p class="demand-intro">Lista zostaje tutaj, dopóki pozycja nie zostanie oznaczona jako kupiona albo usunięta. Możesz też dopisać własną pozycję.</p>
+      <form id="manualShoppingItemForm" class="manual-shopping-form" hidden>
+        <div class="manual-shopping-head"><strong>Dodaj ręcznie do listy zakupów</strong><button type="button" id="cancelManualShoppingItem" class="small-btn">Anuluj</button></div>
+        <div class="form-grid"><label>Nazwa<input id="manualShoppingName" required placeholder="np. Serki wiejskie"></label><label>Kategoria<input id="manualShoppingCategory" list="manualShoppingCategories" placeholder="np. Nabiał"></label><label>Firma / podkategoria<input id="manualShoppingBrand" placeholder="opcjonalnie"></label><label>Gramatura<input id="manualShoppingWeight" placeholder="np. 150 g"></label><label>Ilość<input id="manualShoppingQuantity" type="number" min="0.001" step="any" required></label><label>Jednostka<select id="manualShoppingUnit"><option>szt.</option><option>kg</option><option>l</option><option>opak.</option></select></label></div>
+        <datalist id="manualShoppingCategories"></datalist>
+        <div class="form-actions"><button class="button primary" type="submit">Dodaj do listy</button></div>
+      </form>
       <div id="shoppingListContent" class="shopping-list-content"></div>
-      <div class="form-actions"><button type="button" id="openDemandTextFromShopping" class="button ghost">Wklej nowe zapotrzebowanie</button><button type="button" id="printShoppingList" class="button primary" hidden>Drukuj / zapisz PDF</button><button type="button" id="closeShoppingListBottom" class="button ghost">Zamknij</button></div>
-    </form>
+      <div class="form-actions"><button type="button" id="addManualShoppingItem" class="button ghost">＋ Dodaj ręcznie</button><button type="button" id="openDemandTextFromShopping" class="button ghost">Wklej nowe zapotrzebowanie</button><button type="button" id="printShoppingList" class="button primary" hidden>Drukuj / zapisz PDF</button><button type="button" id="closeShoppingListBottom" class="button ghost">Zamknij</button></div>
+    </div>
   </dialog>
   <dialog id="manualSelectDialog" class="demand-dialog manual-select-dialog">
     <form method="dialog">
@@ -546,7 +556,7 @@
         <label>Data przyjęcia<input id="deliveryReceived" type="date" required></label>
         <label class="full">Notatka <small>(opcjonalnie)</small><input id="deliveryNote" maxlength="1000" placeholder="np. dostawa poranna"></label>
       </div>
-      <section class="delivery-lines-section"><div class="delivery-lines-head"><h3>Produkty w dostawie</h3><button type="button" id="scanDeliveryProduct" class="button primary">▥ Skanuj produkt</button></div><div id="deliveryLines" class="delivery-lines"></div></section>
+      <section class="delivery-lines-section"><div class="delivery-lines-head"><h3>Produkty w dostawie</h3><div class="delivery-add-actions"><button type="button" id="manualDeliveryProduct" class="button ghost">＋ Dodaj ręcznie</button><button type="button" id="scanDeliveryProduct" class="button primary">▥ Skanuj produkt</button></div></div><div id="deliveryLines" class="delivery-lines"></div></section>
       <div class="form-actions"><button type="button" id="cancelDelivery" class="button ghost">Anuluj</button><button type="submit" id="confirmDelivery" class="button primary" disabled>Potwierdź dostawę</button></div>
     </form>
   </dialog>
@@ -556,6 +566,26 @@
       <section id="deliveryItemPreview" class="delivery-item-preview"></section>
       <div class="form-grid"><label>Ilość<input id="deliveryItemQuantity" type="number" min="0.001" step="any" required></label><label>Termin ważności<input id="deliveryItemExpiry" type="date" required></label></div>
       <div class="form-actions"><button type="button" id="cancelDeliveryItem" class="button ghost">Wróć</button><button type="submit" class="button primary">Dodaj do dostawy</button></div>
+    </form>
+  </dialog>
+  <dialog id="deliveryManualItemDialog" class="delivery-item-dialog delivery-manual-item-dialog">
+    <form id="deliveryManualItemForm">
+      <div class="modal-head"><div><p class="eyebrow">RĘCZNA POZYCJA</p><h2>Dodaj produkt do dostawy</h2></div><button type="button" id="closeDeliveryManualItem" class="icon-btn">×</button></div>
+      <p class="delivery-intro">Produkt trafi najpierw do tej dostawy. Magazyn zmieni się dopiero po potwierdzeniu całej dostawy.</p>
+      <div class="form-grid delivery-manual-grid">
+        <label>Kategoria<input id="deliveryManualCategory" list="deliveryCategoryOptions" required placeholder="np. Nabiał"></label>
+        <label>Podkategoria / firma<input id="deliveryManualBrand" list="deliveryBrandOptions" placeholder="np. Mlekovita"></label>
+        <label>Nazwa produktu<input id="deliveryManualName" required placeholder="np. Jogurt naturalny"></label>
+        <label>Kod kreskowy <small>(opcjonalnie)</small><input id="deliveryManualBarcode" inputmode="numeric" autocomplete="off" placeholder="np. 590…"></label>
+        <label>Wartość gramatury<input id="deliveryManualWeightValue" type="number" min="0" step="any" placeholder="np. 200"></label>
+        <label>Gramatura<input id="deliveryManualWeightUnit" list="deliveryWeightUnitOptions" placeholder="g, kg, ml lub l"></label>
+        <label>Ilość<input id="deliveryManualQuantity" type="number" min="0.001" step="any" required></label>
+        <label>Jednostka<select id="deliveryManualUnit"><option value="szt.">szt.</option><option value="kg">kg</option><option value="l">l</option><option value="opak.">opak.</option></select></label>
+        <label>Termin ważności<input id="deliveryManualExpiry" type="date" required></label>
+        <label>Zdjęcie produktu <small>(opcjonalnie)</small><input id="deliveryManualImage" type="file" accept="image/*"></label>
+      </div>
+      <datalist id="deliveryCategoryOptions"></datalist><datalist id="deliveryBrandOptions"></datalist><datalist id="deliveryWeightUnitOptions"><option value="g"></option><option value="kg"></option><option value="ml"></option><option value="l"></option></datalist>
+      <div class="form-actions"><button type="button" id="cancelDeliveryManualItem" class="button ghost">Wróć</button><button type="submit" class="button primary">Dodaj do dostawy</button></div>
     </form>
   </dialog>
   <dialog id="deliveryHistoryDialog" class="delivery-history-dialog">
@@ -587,6 +617,7 @@
   <script src="inventory-overview.js" defer></script>
   <script src="manual-demand.js" defer></script>
   <script src="description-demand.js" defer></script>
+  <script src="shopping-workflow.js" defer></script>
   <script src="demand-menu.js" defer></script>
   <script src="fruit-category.js" defer></script>
   <script src="users.js" defer></script>

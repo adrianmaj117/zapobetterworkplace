@@ -141,6 +141,19 @@ db.exec(`
 if (!db.prepare('PRAGMA table_info(demand_runs)').all().some(column => column.name === 'demand_date')) db.exec('ALTER TABLE demand_runs ADD COLUMN demand_date TEXT');
 if (!db.prepare('PRAGMA table_info(demand_runs)').all().some(column => column.name === 'reversed_at')) db.exec('ALTER TABLE demand_runs ADD COLUMN reversed_at TEXT');
 if (!db.prepare('PRAGMA table_info(demand_items)').all().some(column => column.name === 'corrected_quantity')) db.exec('ALTER TABLE demand_items ADD COLUMN corrected_quantity REAL NOT NULL DEFAULT 0');
+// quantity oznacza pełne zapotrzebowanie. Wydana ilość i niedobór są
+// zapisywane osobno, aby historia dnia mogła pokazać również brakujący towar.
+const demandItemColumns = () => db.prepare('PRAGMA table_info(demand_items)').all().map(column => column.name);
+if (!demandItemColumns().includes('issued_quantity')) db.exec('ALTER TABLE demand_items ADD COLUMN issued_quantity REAL NOT NULL DEFAULT 0');
+if (!demandItemColumns().includes('shortage_quantity')) db.exec('ALTER TABLE demand_items ADD COLUMN shortage_quantity REAL NOT NULL DEFAULT 0');
+if (!demandItemColumns().includes('shortage_resolved_quantity')) db.exec('ALTER TABLE demand_items ADD COLUMN shortage_resolved_quantity REAL NOT NULL DEFAULT 0');
+if (!demandItemColumns().includes('shortage_resolution')) db.exec("ALTER TABLE demand_items ADD COLUMN shortage_resolution TEXT NOT NULL DEFAULT ''");
+// Wcześniejsze wpisy zawierały wyłącznie faktycznie odjętą liczbę sztuk.
+// Jednorazowa migracja zachowuje ich dotychczasowe znaczenie w historii.
+if (!db.prepare("SELECT value FROM app_settings WHERE key='demand_items_shortage_migration_v1'").get()) {
+  db.prepare('UPDATE demand_items SET issued_quantity=quantity WHERE COALESCE(issued_quantity, 0)=0 AND quantity>0').run();
+  db.prepare("INSERT INTO app_settings (key, value) VALUES ('demand_items_shortage_migration_v1', 'true')").run();
+}
 db.exec(`CREATE TABLE IF NOT EXISTS demand_day_products (
   demand_date TEXT NOT NULL,
   product_id INTEGER NOT NULL,
@@ -175,6 +188,9 @@ if (!db.prepare('PRAGMA table_info(shopping_lists)').all().some(column => column
 if (!db.prepare('PRAGMA table_info(shopping_list_items)').all().some(column => column.name === 'purchased_at')) db.exec('ALTER TABLE shopping_list_items ADD COLUMN purchased_at TEXT');
 if (!db.prepare('PRAGMA table_info(shopping_list_items)').all().some(column => column.name === 'purchased_date')) db.exec('ALTER TABLE shopping_list_items ADD COLUMN purchased_date TEXT');
 if (!db.prepare('PRAGMA table_info(shopping_list_items)').all().some(column => column.name === 'purchased_quantity')) db.exec('ALTER TABLE shopping_list_items ADD COLUMN purchased_quantity REAL NOT NULL DEFAULT 0');
+if (!db.prepare('PRAGMA table_info(shopping_list_items)').all().some(column => column.name === 'demand_run_id')) db.exec('ALTER TABLE shopping_list_items ADD COLUMN demand_run_id INTEGER');
+if (!db.prepare('PRAGMA table_info(shopping_list_items)').all().some(column => column.name === 'demand_item_id')) db.exec('ALTER TABLE shopping_list_items ADD COLUMN demand_item_id INTEGER');
+if (!db.prepare('PRAGMA table_info(shopping_list_items)').all().some(column => column.name === 'source')) db.exec("ALTER TABLE shopping_list_items ADD COLUMN source TEXT NOT NULL DEFAULT 'demand'");
 db.prepare('UPDATE shopping_list_items SET purchased_quantity=missing_quantity WHERE purchased_at IS NOT NULL AND COALESCE(purchased_quantity, 0)=0').run();
 
 function syncBundledInventory() {
@@ -378,6 +394,11 @@ function productById(id) {
 
 function validNumber(value) {
   return typeof value === 'number' && Number.isFinite(value);
+}
+
+function productIdFrom(value) {
+  const id = Number(value);
+  return Number.isInteger(id) && id > 0 ? id : null;
 }
 
 function purchaseSummary() {
@@ -602,17 +623,138 @@ app.get('/api/deliveries', (req, res) => {
   res.json(rows.map(row => deliveryById(row.id)));
 });
 
+function cleanBarcode(value) {
+  return String(value || '').trim().replace(/[^0-9A-Za-z-]/g, '').toUpperCase();
+}
+
+function deliveryDraft(value) {
+  if (!value || typeof value !== 'object') return null;
+  const name = String(value.name || '').trim().slice(0, 255);
+  if (!name) return null;
+  const rawWeight = String(value.weight || value.gramatura || '').trim();
+  const parsedWeight = rawWeight.match(/^(\d+(?:[,.]\d+)?)\s*(g|kg|ml|l)$/i);
+  let weightValue = Number(value.weight_value);
+  let weightUnit = String(value.weight_unit || '').trim().toLowerCase();
+  if ((!Number.isFinite(weightValue) || weightValue <= 0 || !['g', 'kg', 'ml', 'l'].includes(weightUnit)) && parsedWeight) {
+    weightValue = Number(parsedWeight[1].replace(',', '.'));
+    weightUnit = parsedWeight[2].toLowerCase();
+  }
+  if (!Number.isFinite(weightValue) || weightValue <= 0 || !['g', 'kg', 'ml', 'l'].includes(weightUnit)) {
+    weightValue = null;
+    weightUnit = null;
+  }
+  const image = String(value.image_data || '');
+  return {
+    name,
+    category: canonicalCategory(value.category),
+    brand: String(value.brand || '').trim().slice(0, 120),
+    unit: String(value.unit || 'szt.').trim().slice(0, 30) || 'szt.',
+    weight_value: weightValue,
+    weight_unit: weightUnit,
+    barcode: cleanBarcode(value.barcode),
+    image_data: image.startsWith('data:image/') ? image : null
+  };
+}
+
+function createProductFromDeliveryDraft(draft) {
+  if (draft.barcode && db.prepare('SELECT id FROM products WHERE barcode=?').get(draft.barcode)) {
+    throw new Error('Ten kod kreskowy jest już przypisany do innego artykułu. Zeskanuj go ponownie, aby wybrać istniejący produkt.');
+  }
+  const grams = draft.weight_value && draft.weight_unit === 'g' ? draft.weight_value
+    : draft.weight_value && draft.weight_unit === 'kg' ? draft.weight_value * 1000 : null;
+  const result = db.prepare(`INSERT INTO products
+    (name, category, brand, unit, quantity, min_quantity, weight_grams, weight_value, weight_unit, image_data, barcode, updated_at)
+    VALUES (?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`)
+    .run(draft.name, draft.category, storedBrand(draft.category, draft.brand), draft.unit, grams, draft.weight_value, draft.weight_unit, draft.image_data, draft.barcode || null);
+  return productById(Number(result.lastInsertRowid));
+}
+
+// Dostawa może jednocześnie zamknąć brak z zapotrzebowania. Ta część ilości
+// nie trafia drugi raz na stan, bo pełne zapotrzebowanie już widnieje w historii dnia.
+function normalizedShoppingText(value) {
+  return String(value || '').toLocaleLowerCase('pl-PL').normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+function isSameLooseShoppingProduct(item, product) {
+  if (Number(item.product_id) === Number(product.id)) return true;
+  if (item.product_id) return false;
+  const sameName = normalizedShoppingText(item.name) === normalizedShoppingText(product.name);
+  const sameCategory = canonicalCategory(item.category) === canonicalCategory(product.category);
+  const itemBrand = normalizedShoppingText(item.brand);
+  const productBrand = normalizedShoppingText(product.brand);
+  const sameBrand = !itemBrand || itemBrand === productBrand;
+  const productWeight = product.weight_value ? `${product.weight_value} ${product.weight_unit || ''}` : '';
+  const sameWeight = !String(item.weight || '').trim() || normalizedShoppingText(item.weight) === normalizedShoppingText(productWeight);
+  return sameName && sameCategory && sameBrand && sameWeight;
+}
+
+function resolveDeliveredShoppingItems(product, quantity, receivedDate) {
+  const productId = product.id;
+  let remainingForStock = Number(quantity);
+  const linkedItems = db.prepare(`SELECT i.*, di.shortage_quantity, di.shortage_resolved_quantity
+    FROM shopping_list_items i
+    JOIN demand_items di ON di.id=i.demand_item_id
+    WHERE i.product_id=? AND i.demand_item_id IS NOT NULL
+      AND COALESCE(i.purchased_quantity, 0) < i.missing_quantity
+      AND COALESCE(di.shortage_resolution, '') <> 'dismissed'
+    ORDER BY i.id ASC`).all(productId);
+  const updateItem = db.prepare(`UPDATE shopping_list_items
+    SET purchased_at=CURRENT_TIMESTAMP, purchased_date=?, purchased_quantity=COALESCE(purchased_quantity, 0)+?
+    WHERE id=?`);
+  const updateDemand = db.prepare(`UPDATE demand_items
+    SET shortage_resolved_quantity=?, shortage_resolution=? WHERE id=?`);
+  const deleteItem = db.prepare('DELETE FROM shopping_list_items WHERE id=?');
+  for (const item of linkedItems) {
+    if (remainingForStock <= 0) break;
+    const listRemaining = Math.max(0, Number(item.missing_quantity) - Number(item.purchased_quantity || 0));
+    const shortageRemaining = Math.max(0, Number(item.shortage_quantity || 0) - Number(item.shortage_resolved_quantity || 0));
+    const resolved = Math.min(remainingForStock, listRemaining, shortageRemaining);
+    if (resolved <= 0) continue;
+    const resolvedTotal = Math.min(Number(item.shortage_quantity || 0), Number(item.shortage_resolved_quantity || 0) + resolved);
+    updateItem.run(receivedDate, resolved, item.id);
+    updateDemand.run(resolvedTotal, resolvedTotal >= Number(item.shortage_quantity || 0) ? 'purchased' : 'partial', item.demand_item_id);
+    if (resolved >= listRemaining) deleteItem.run(item.id);
+    remainingForStock -= resolved;
+  }
+
+  // Ręczne/tymczasowe wpisy na liście oznaczamy jako załatwione przez dostawę,
+  // lecz ich ilość pozostaje na magazynie (nie były wcześniej wpisane do historii dnia).
+  const looseItems = db.prepare(`SELECT * FROM shopping_list_items
+    WHERE (product_id=? OR product_id IS NULL) AND demand_item_id IS NULL
+      AND COALESCE(purchased_quantity, 0) < missing_quantity
+    ORDER BY id ASC`).all(productId).filter(item => isSameLooseShoppingProduct(item, product));
+  // Najpierw dostawa uzupełnia powiązane zapotrzebowanie z Historii dnia.
+  // Tylko realna nadwyżka może zamknąć niezależną, ręczną pozycję zakupową.
+  let remainingForLooseItems = Math.max(0, remainingForStock);
+  for (const item of looseItems) {
+    if (remainingForLooseItems <= 0) break;
+    const remaining = Math.max(0, Number(item.missing_quantity) - Number(item.purchased_quantity || 0));
+    const amount = Math.min(remainingForLooseItems, remaining);
+    if (amount <= 0) continue;
+    updateItem.run(receivedDate, amount, item.id);
+    if (amount >= remaining) deleteItem.run(item.id);
+    remainingForLooseItems -= amount;
+  }
+  return Math.max(0, remainingForStock);
+}
+
 // Zatwierdzenie grupowej dostawy: wszystkie partie i historia powstają
 // w jednej transakcji, więc nie ma ryzyka zapisania tylko części produktów.
 app.post('/api/deliveries', (req, res) => {
   const supplier = String(req.body?.supplier || '').trim();
   const received = parseExpiration(req.body?.received_date) || new Date().toISOString().slice(0, 10);
   const note = String(req.body?.note || '').trim().slice(0, 1000);
-  const items = (Array.isArray(req.body?.items) ? req.body.items : []).map(item => ({
-    product_id: Number(item.product_id),
-    quantity: Number(item.quantity),
-    expiration_date: parseExpiration(item.expiration_date)
-  })).filter(item => Number.isInteger(item.product_id) && Number.isFinite(item.quantity) && item.quantity > 0);
+  const items = (Array.isArray(req.body?.items) ? req.body.items : []).map(raw => {
+    const productId = productIdFrom(raw.product_id);
+    return {
+      product_id: productId,
+      // Obsługujemy także płaski formularz starszego interfejsu.
+      new_product: deliveryDraft(raw.new_product || (productId ? null : raw)),
+      quantity: Number(raw.quantity),
+      expiration_date: parseExpiration(raw.expiration_date)
+    };
+  }).filter(item => Number.isFinite(item.quantity) && item.quantity > 0 && (item.product_id || item.new_product));
   if (!supplier) return res.status(400).json({ error: 'Podaj nazwę dostawy lub dostawcy.' });
   if (!items.length) return res.status(400).json({ error: 'Dodaj co najmniej jeden artykuł do dostawy.' });
 
@@ -626,12 +768,15 @@ app.post('/api/deliveries', (req, res) => {
     const addMovement = db.prepare("INSERT INTO movements (product_id, type, quantity, note) VALUES (?, 'add', ?, ?)");
     const touched = new Set();
     for (const item of items) {
-      const product = productById(item.product_id);
+      const product = item.product_id ? productById(item.product_id) : createProductFromDeliveryDraft(item.new_product);
       if (!product) throw new Error('Jeden z produktów nie istnieje już w magazynie. Odśwież stronę i spróbuj ponownie.');
+      const stockQuantity = resolveDeliveredShoppingItems(product, item.quantity, received);
       addItem.run(delivery.lastInsertRowid, product.id, item.quantity, item.expiration_date);
-      updateProduct.run(item.quantity, received, product.id);
-      addBatch.run(product.id, item.quantity, item.expiration_date, received);
-      addMovement.run(product.id, item.quantity, `Dostawa: ${supplier}`);
+      updateProduct.run(stockQuantity, received, product.id);
+      if (stockQuantity > 0) {
+        addBatch.run(product.id, stockQuantity, item.expiration_date, received);
+        addMovement.run(product.id, stockQuantity, `Dostawa: ${supplier}`);
+      }
       touched.add(product.id);
     }
     touched.forEach(id => syncProductExpiryFromBatches(id));
@@ -653,26 +798,44 @@ function isExcludedShoppingItem(item) {
   const text = normalize(`${item.name} ${item.category}`);
   return category === 'inne' || category.includes('owoce') || category.includes('bulki z katowic') || text.includes('office box') || ['bajgiel', 'bagiel', 'bulka', 'ciabatta', 'bagietka', 'kanapk'].some(word => text.includes(word));
 }
+
+function openShoppingList(listDate, sourceText = '') {
+  const active = db.prepare(`SELECT l.id FROM shopping_lists l
+    WHERE EXISTS (
+      SELECT 1 FROM shopping_list_items i
+      WHERE i.shopping_list_id=l.id AND COALESCE(i.purchased_quantity, 0) < i.missing_quantity
+    )
+    ORDER BY l.id DESC LIMIT 1`).get();
+  if (active) return Number(active.id);
+  return Number(db.prepare('INSERT INTO shopping_lists (source_text, list_date) VALUES (?, ?)')
+    .run(String(sourceText || '').slice(0, 50000), listDate).lastInsertRowid);
+}
+
+function insertShoppingItem(listId, item, { demandRunId = null, demandItemId = null, source = 'demand' } = {}) {
+  return db.prepare(`INSERT INTO shopping_list_items
+    (shopping_list_id, product_id, name, category, brand, weight, required_quantity, available_quantity, missing_quantity, unit, demand_run_id, demand_item_id, source)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(listId, item.product_id || null, item.name, canonicalCategory(item.category), item.brand || '', item.weight || '', item.required_quantity, item.available_quantity, item.missing_quantity, item.unit || 'szt.', demandRunId, demandItemId, source);
+}
+
 function shoppingListById(id) {
   const list = db.prepare('SELECT * FROM shopping_lists WHERE id=?').get(id);
   if (!list) return null;
   list.items = db.prepare("SELECT * FROM shopping_list_items WHERE shopping_list_id=? ORDER BY category COLLATE NOCASE, name COLLATE NOCASE").all(id).filter(item => !isExcludedShoppingItem(item));
   return list;
 }
-function clearUnpurchasedShoppingLists() {
-  db.prepare('DELETE FROM shopping_list_items WHERE purchased_at IS NULL').run();
-  db.prepare(`DELETE FROM shopping_lists WHERE NOT EXISTS (
-    SELECT 1 FROM shopping_list_items i WHERE i.shopping_list_id=shopping_lists.id AND i.purchased_at IS NOT NULL
-  )`).run();
-}
 app.get('/api/shopping-lists/latest', (req, res) => {
-  const latest = db.prepare('SELECT id FROM shopping_lists ORDER BY id DESC LIMIT 1').get();
+  const latest = db.prepare(`SELECT l.id FROM shopping_lists l
+    ORDER BY CASE WHEN EXISTS (
+      SELECT 1 FROM shopping_list_items i
+      WHERE i.shopping_list_id=l.id AND COALESCE(i.purchased_quantity, 0) < i.missing_quantity
+    ) THEN 0 ELSE 1 END, l.id DESC LIMIT 1`).get();
   res.json(latest ? shoppingListById(latest.id) : null);
 });
 app.post('/api/shopping-lists', (req, res) => {
   const rawItems = Array.isArray(req.body?.items) ? req.body.items : [];
   const items = rawItems.map(item => ({
-    product_id: Number.isInteger(Number(item.product_id)) ? Number(item.product_id) : null,
+    product_id: productIdFrom(item.product_id),
     name: String(item.name || '').trim(), category: String(item.category || 'Inne').trim() || 'Inne', brand: String(item.brand || '').trim(),
     weight: String(item.weight || '').trim(), required_quantity: Number(item.required_quantity), available_quantity: Number(item.available_quantity),
     missing_quantity: Number(item.missing_quantity), unit: String(item.unit || 'szt.').trim() || 'szt.'
@@ -680,43 +843,101 @@ app.post('/api/shopping-lists', (req, res) => {
   db.exec('BEGIN');
   try {
     const listDate = /^\d{4}-\d{2}-\d{2}$/.test(String(req.body?.list_date || '')) ? req.body.list_date : new Date().toISOString().slice(0, 10);
-    // Lista zakupów przedstawia wyłącznie bieżące porównanie — także wtedy, gdy braków nie ma.
-    clearUnpurchasedShoppingLists();
-    const list = db.prepare('INSERT INTO shopping_lists (source_text, list_date) VALUES (?, ?)').run(String(req.body?.source_text || '').slice(0, 50000), listDate);
-    const add = db.prepare('INSERT INTO shopping_list_items (shopping_list_id, product_id, name, category, brand, weight, required_quantity, available_quantity, missing_quantity, unit) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-    items.forEach(item => add.run(list.lastInsertRowid, item.product_id, item.name, item.category, item.brand, item.weight, item.required_quantity, item.available_quantity, item.missing_quantity, item.unit));
-    db.exec('COMMIT'); res.status(201).json(shoppingListById(Number(list.lastInsertRowid)));
+    const listId = openShoppingList(listDate, req.body?.source_text);
+    const existingPreview = db.prepare(`SELECT id FROM shopping_list_items
+      WHERE shopping_list_id=? AND source='preview' AND COALESCE(purchased_quantity, 0) < missing_quantity
+        AND ((product_id IS NOT NULL AND product_id=?) OR (product_id IS NULL AND name=? AND category=?))
+      ORDER BY id DESC LIMIT 1`);
+    const updatePreview = db.prepare(`UPDATE shopping_list_items
+      SET name=?, category=?, brand=?, weight=?, required_quantity=?, available_quantity=?, missing_quantity=?, unit=?
+      WHERE id=?`);
+    items.forEach(item => {
+      const previous = existingPreview.get(listId, item.product_id, item.name, canonicalCategory(item.category));
+      if (previous) updatePreview.run(item.name, canonicalCategory(item.category), item.brand, item.weight, item.required_quantity, item.available_quantity, item.missing_quantity, item.unit, previous.id);
+      else insertShoppingItem(listId, item, { source:'preview' });
+    });
+    db.exec('COMMIT'); res.status(201).json(shoppingListById(listId));
+  } catch (error) { db.exec('ROLLBACK'); throw error; }
+});
+
+// Ręczny wpis pozwala dopisać rzecz, której jeszcze nie ma w bieżącym porównaniu.
+app.post('/api/shopping-lists/items', (req, res) => {
+  const body = req.body || {};
+  const quantity = Number(body.missing_quantity ?? body.quantity ?? body.required_quantity);
+  const name = String(body.name || '').trim();
+  if (!name || !Number.isFinite(quantity) || quantity <= 0) return res.status(400).json({ error: 'Podaj nazwę oraz prawidłową ilość do kupienia.' });
+  const listDate = /^\d{4}-\d{2}-\d{2}$/.test(String(body.list_date || '')) ? body.list_date : new Date().toISOString().slice(0, 10);
+  const productId = productIdFrom(body.product_id);
+  const item = {
+    product_id: productId,
+    name,
+    category: canonicalCategory(body.category),
+    brand: String(body.brand || '').trim(),
+    weight: String(body.weight || '').trim(),
+    required_quantity: quantity,
+    available_quantity: Number.isFinite(Number(body.available_quantity)) ? Number(body.available_quantity) : 0,
+    missing_quantity: quantity,
+    unit: String(body.unit || 'szt.').trim() || 'szt.'
+  };
+  db.exec('BEGIN');
+  try {
+    const listId = openShoppingList(listDate, 'Ręcznie dodana pozycja');
+    const result = insertShoppingItem(listId, item, { source:'manual' });
+    db.exec('COMMIT');
+    res.status(201).json({ item: db.prepare('SELECT * FROM shopping_list_items WHERE id=?').get(result.lastInsertRowid), list:shoppingListById(listId) });
   } catch (error) { db.exec('ROLLBACK'); throw error; }
 });
 
 // Usunięcie pojedynczej, niepotrzebnej pozycji z bieżącej listy zakupów.
 app.delete('/api/shopping-lists/items/:id', (req, res) => {
   const id = Number(req.params.id);
-  const item = db.prepare('SELECT id FROM shopping_list_items WHERE id=?').get(id);
+  const item = db.prepare('SELECT * FROM shopping_list_items WHERE id=?').get(id);
   if (!item) return res.status(404).json({ error: 'Nie znaleziono tej pozycji na liście zakupów.' });
-  db.prepare('DELETE FROM shopping_list_items WHERE id=?').run(id);
+  db.exec('BEGIN');
+  try {
+    if (item.demand_item_id) {
+      db.prepare(`UPDATE demand_items
+        SET shortage_resolved_quantity=shortage_quantity, shortage_resolution='dismissed'
+        WHERE id=?`).run(item.demand_item_id);
+    }
+    db.prepare('DELETE FROM shopping_list_items WHERE id=?').run(id);
+    db.exec('COMMIT');
+  } catch (error) { db.exec('ROLLBACK'); throw error; }
   res.status(204).end();
 });
 
 // Zielona fajka zapisuje zakupioną część do historii dnia. Tylko nadwyżka
 // ponad wymagane zapotrzebowanie trafia jako nowa partia do magazynu.
 app.post('/api/shopping-lists/items/:id/complete', (req, res) => {
-  const item = db.prepare('SELECT i.*, s.list_date FROM shopping_list_items i JOIN shopping_lists s ON s.id=i.shopping_list_id WHERE i.id=?').get(Number(req.params.id));
+  const item = db.prepare(`SELECT i.*, s.list_date, di.shortage_quantity, di.shortage_resolved_quantity
+    FROM shopping_list_items i
+    JOIN shopping_lists s ON s.id=i.shopping_list_id
+    LEFT JOIN demand_items di ON di.id=i.demand_item_id
+    WHERE i.id=?`).get(Number(req.params.id));
   if (!item) return res.status(404).json({ error: 'Nie znaleziono tej pozycji na liście zakupów.' });
   const purchasedNow = Number(req.body?.purchased_quantity);
   if (!Number.isFinite(purchasedNow) || purchasedNow <= 0) return res.status(400).json({ error: 'Podaj prawidłową liczbę zakupionych sztuk.' });
   const purchaseDate = /^\d{4}-\d{2}-\d{2}$/.test(String(req.body?.purchased_date || '')) ? req.body.purchased_date : new Date().toISOString().slice(0, 10);
   const alreadyPurchased = Math.min(Number(item.purchased_quantity || 0), Number(item.missing_quantity));
   const requiredRemaining = Math.max(0, Number(item.missing_quantity) - alreadyPurchased);
-  const historyQuantity = Math.min(purchasedNow, requiredRemaining);
-  const surplusQuantity = Math.max(0, purchasedNow - historyQuantity);
+  // SQLite zwraca NULL dla ręcznych pozycji. Number(null) daje 0, dlatego
+  // trzeba dodatkowo wymagać prawdziwego, dodatniego identyfikatora.
+  const demandItemId = Number(item.demand_item_id);
+  const linkedDemand = Number.isInteger(demandItemId) && demandItemId > 0;
+  const historyQuantity = linkedDemand ? Math.min(purchasedNow, requiredRemaining) : 0;
+  const surplusQuantity = linkedDemand ? Math.max(0, purchasedNow - historyQuantity) : purchasedNow;
   const received = parseExpiration(req.body?.received_date) || purchaseDate;
   const expiration = parseExpiration(req.body?.expiration_date);
   db.exec('BEGIN');
   try {
-    if (historyQuantity > 0) {
+    if (purchasedNow > 0) {
       db.prepare('UPDATE shopping_list_items SET purchased_at=CURRENT_TIMESTAMP, purchased_date=?, purchased_quantity=purchased_quantity+? WHERE id=?')
-        .run(purchaseDate, historyQuantity, item.id);
+        .run(purchaseDate, linkedDemand ? historyQuantity : purchasedNow, item.id);
+    }
+    if (linkedDemand && historyQuantity > 0) {
+      const resolvedTotal = Math.min(Number(item.shortage_quantity || 0), Number(item.shortage_resolved_quantity || 0) + historyQuantity);
+      db.prepare('UPDATE demand_items SET shortage_resolved_quantity=?, shortage_resolution=? WHERE id=?')
+        .run(resolvedTotal, resolvedTotal >= Number(item.shortage_quantity || 0) ? 'purchased' : 'partial', item.demand_item_id);
     }
     let product = null;
     if (surplusQuantity > 0) {
@@ -725,7 +946,7 @@ app.post('/api/shopping-lists/items/:id/complete', (req, res) => {
         const weight = String(item.weight || '').match(/^\s*(\d+(?:[.,]\d+)?)\s*(g|kg|ml|l)\s*$/i);
         const result = db.prepare(`INSERT INTO products (name, category, brand, unit, quantity, min_quantity, weight_value, weight_unit, expiration_date, received_date, updated_at)
           VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, CURRENT_TIMESTAMP)`)
-          .run(item.name, canonicalCategory(item.category), item.brand || '', item.unit || 'szt.', surplusQuantity, weight ? Number(weight[1].replace(',', '.')) : null, weight ? weight[2].toLowerCase() : null, expiration, received);
+          .run(item.name, canonicalCategory(item.category), storedBrand(canonicalCategory(item.category), item.brand || ''), item.unit || 'szt.', surplusQuantity, weight ? Number(weight[1].replace(',', '.')) : null, weight ? weight[2].toLowerCase() : null, expiration, received);
         product = productById(result.lastInsertRowid);
       } else {
         db.prepare('UPDATE products SET quantity=quantity+?, updated_at=CURRENT_TIMESTAMP WHERE id=?').run(surplusQuantity, product.id);
@@ -1032,27 +1253,47 @@ app.post('/api/demand/apply', (req, res) => {
     const run = db.prepare('INSERT INTO demand_runs (source_name, recognized_text, demand_date) VALUES (?, ?, ?)').run(String(source_name).slice(0, 255), String(recognized_text).slice(0, 50000), demandDate);
     const update = db.prepare('UPDATE products SET quantity=quantity-?, updated_at=CURRENT_TIMESTAMP WHERE id=?');
     const movement = db.prepare("INSERT INTO movements (product_id, type, quantity, note) VALUES (?, 'demand', ?, ?)");
-    const addItem = db.prepare('INSERT INTO demand_items (demand_run_id, product_id, quantity) VALUES (?, ?, ?)');
+    const addItem = db.prepare(`INSERT INTO demand_items
+      (demand_run_id, product_id, quantity, issued_quantity, shortage_quantity, shortage_resolved_quantity, shortage_resolution)
+      VALUES (?, ?, ?, ?, ?, 0, '')`);
     const snapshot = db.prepare('INSERT OR IGNORE INTO demand_day_products (demand_date, product_id, opening_quantity) VALUES (?, ?, ?)');
     const shortages = [];
     for (const product of products) {
       const requested = quantities.get(product.id);
-      const quantity = Math.min(requested, product.quantity);
-      const missing = requested - quantity;
-      if (missing > 0) shortages.push({ product_id:product.id, name:product.name, category:product.category, brand:product.brand || '', weight:product.weight_value ? `${product.weight_value} ${product.weight_unit}` : '', required_quantity:requested, available_quantity:product.quantity, missing_quantity:missing, unit:product.unit });
-      if (quantity <= 0) continue;
+      const issued = Math.min(requested, product.quantity);
+      const missing = requested - issued;
+      // Każdy wpis jest widoczny w historii, także gdy stan wynosił 0.
       snapshot.run(demandDate, product.id, product.quantity);
-      update.run(quantity, product.id);
-      consumeProductBatches(product.id, quantity);
-      movement.run(product.id, quantity, `Zapotrzebowanie${source_name ? `: ${String(source_name).slice(0, 120)}` : ''}`);
-      addItem.run(run.lastInsertRowid, product.id, quantity);
+      const demandItem = addItem.run(run.lastInsertRowid, product.id, requested, issued, missing);
+      if (missing > 0) shortages.push({ demand_item_id:Number(demandItem.lastInsertRowid), product_id:product.id, name:product.name, category:product.category, brand:product.brand || '', weight:product.weight_value ? `${product.weight_value} ${product.weight_unit}` : '', required_quantity:requested, available_quantity:product.quantity, missing_quantity:missing, unit:product.unit });
+      if (issued <= 0) continue;
+      update.run(issued, product.id);
+      consumeProductBatches(product.id, issued);
+      movement.run(product.id, issued, `Zapotrzebowanie${source_name ? `: ${String(source_name).slice(0, 120)}` : ''}`);
     }
     // Niedobory z zatwierdzonego zapotrzebowania są od razu gotowe na liście zakupów.
-    clearUnpurchasedShoppingLists();
+    // Starsze otwarte pozycje pozostają na niej do czasu zakupu albo skasowania.
     const visibleShortages = shortages.filter(item => !isExcludedShoppingItem(item));
-    const shoppingList = db.prepare('INSERT INTO shopping_lists (source_text, list_date) VALUES (?, ?)').run(String(recognized_text).slice(0, 50000), demandDate);
-    const addShoppingItem = db.prepare('INSERT INTO shopping_list_items (shopping_list_id, product_id, name, category, brand, weight, required_quantity, available_quantity, missing_quantity, unit) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-    visibleShortages.forEach(item => addShoppingItem.run(shoppingList.lastInsertRowid, item.product_id, item.name, item.category, item.brand, item.weight, item.required_quantity, item.available_quantity, item.missing_quantity, item.unit));
+    const updateDemandStatus = db.prepare('UPDATE demand_items SET shortage_resolved_quantity=?, shortage_resolution=? WHERE id=?');
+    const visibleIds = new Set(visibleShortages.map(item => item.demand_item_id));
+    // Owoce i pieczywo z Katowic nie są zakupami do realizacji przez magazyn.
+    shortages.filter(item => !visibleIds.has(item.demand_item_id)).forEach(item => updateDemandStatus.run(item.missing_quantity, 'excluded', item.demand_item_id));
+    if (visibleShortages.length) {
+      const listId = openShoppingList(demandDate, recognized_text);
+      const previewItem = db.prepare(`SELECT id FROM shopping_list_items
+        WHERE product_id=? AND source='preview' AND demand_item_id IS NULL
+          AND COALESCE(purchased_quantity, 0) < missing_quantity
+        ORDER BY id DESC LIMIT 1`);
+      const connectPreview = db.prepare(`UPDATE shopping_list_items
+        SET name=?, category=?, brand=?, weight=?, required_quantity=?, available_quantity=?, missing_quantity=?, unit=?,
+          demand_run_id=?, demand_item_id=?, source='demand'
+        WHERE id=?`);
+      visibleShortages.forEach(item => {
+        const preview = previewItem.get(item.product_id);
+        if (preview) connectPreview.run(item.name, canonicalCategory(item.category), item.brand, item.weight, item.required_quantity, item.available_quantity, item.missing_quantity, item.unit, run.lastInsertRowid, item.demand_item_id, preview.id);
+        else insertShoppingItem(listId, item, { demandRunId:Number(run.lastInsertRowid), demandItemId:item.demand_item_id, source:'demand' });
+      });
+    }
     db.exec('COMMIT');
     res.json({ applied: products.filter(product => Math.min(quantities.get(product.id), product.quantity) > 0).length, demand_id: Number(run.lastInsertRowid), shortages:visibleShortages });
   } catch (error) { db.exec('ROLLBACK'); throw error; }
@@ -1060,7 +1301,12 @@ app.post('/api/demand/apply', (req, res) => {
 
 function validDemandDate(value) { return /^\d{4}-\d{2}-\d{2}$/.test(String(value || '')); }
 function getDemandItems(runId) {
-  return db.prepare(`SELECT di.id, di.product_id, di.quantity, COALESCE(di.corrected_quantity, 0) AS corrected_quantity,
+  return db.prepare(`SELECT di.id, di.product_id, di.quantity,
+    COALESCE(di.issued_quantity, di.quantity) AS issued_quantity,
+    COALESCE(di.shortage_quantity, 0) AS shortage_quantity,
+    COALESCE(di.shortage_resolved_quantity, 0) AS shortage_resolved_quantity,
+    COALESCE(di.shortage_resolution, '') AS shortage_resolution,
+    COALESCE(di.corrected_quantity, 0) AS corrected_quantity,
     p.name, p.brand, p.category, p.unit, p.quantity AS current_quantity, p.weight_value, p.weight_unit,
     dp.opening_quantity
     FROM demand_items di
@@ -1074,13 +1320,14 @@ app.get('/api/demand/daily', (req, res) => {
   const runs = db.prepare("SELECT id, source_name, demand_date, created_at, reversed_at FROM demand_runs WHERE COALESCE(demand_date, date(created_at))=? ORDER BY id DESC").all(demandDate);
   const purchases = db.prepare(`SELECT i.id, i.name, i.category, i.brand, i.weight, i.purchased_quantity, i.unit, i.purchased_date
     FROM shopping_list_items i
-    WHERE COALESCE(i.purchased_date, date(i.purchased_at))=? AND COALESCE(i.purchased_quantity, 0)>0
+    WHERE i.demand_item_id IS NULL
+      AND COALESCE(i.purchased_date, date(i.purchased_at))=? AND COALESCE(i.purchased_quantity, 0)>0
     ORDER BY i.category COLLATE NOCASE, i.name COLLATE NOCASE`).all(demandDate);
   const withItems = runs.map(run => ({ ...run, items: getDemandItems(run.id) }));
   const summary = new Map();
   withItems.forEach(run => run.items.forEach(item => {
-    const record = summary.get(item.product_id) || { product_id:item.product_id, name:item.name, unit:item.unit, opening_quantity:item.opening_quantity, demanded:0, corrected:0, current_quantity:item.current_quantity };
-    record.demanded += item.quantity; record.corrected += item.corrected_quantity; summary.set(item.product_id, record);
+    const record = summary.get(item.product_id) || { product_id:item.product_id, name:item.name, unit:item.unit, opening_quantity:item.opening_quantity, demanded:0, issued:0, shortage:0, shortage_resolved:0, corrected:0, current_quantity:item.current_quantity };
+    record.demanded += item.quantity; record.issued += item.issued_quantity; record.shortage += item.shortage_quantity; record.shortage_resolved += item.shortage_resolved_quantity; record.corrected += item.corrected_quantity; summary.set(item.product_id, record);
   }));
   res.json({ date:demandDate, runs:withItems, purchases, summary:[...summary.values()].sort((a,b) => a.name.localeCompare(b.name, 'pl')) });
 });
@@ -1098,7 +1345,7 @@ app.post('/api/demand/runs/:id/correct', (req, res) => {
   const items = getDemandItems(runId); const byProduct = new Map(items.map(item => [item.product_id, item]));
   for (const [productId, quantity] of requested) {
     const item = byProduct.get(productId);
-    if (!item || quantity > item.quantity - item.corrected_quantity) return res.status(400).json({ error: 'Nie można przywrócić większej ilości niż odjęto w tym zapotrzebowaniu.' });
+    if (!item || quantity > item.issued_quantity - item.corrected_quantity) return res.status(400).json({ error: 'Nie można przywrócić większej ilości niż odjęto w tym zapotrzebowaniu.' });
   }
   db.exec('BEGIN');
   try {
@@ -1114,12 +1361,12 @@ app.post('/api/demand/runs/:id/reverse', (req, res) => {
   if (req.body?.password !== '123') return res.status(403).json({ error: 'Nieprawidłowe hasło zatwierdzające.' });
   const run = db.prepare('SELECT id FROM demand_runs WHERE id=?').get(runId);
   if (!run) return res.status(404).json({ error: 'Nie znaleziono tego zapotrzebowania.' });
-  const items = getDemandItems(runId).map(item => ({ ...item, restore:item.quantity-item.corrected_quantity })).filter(item => item.restore > 0);
+  const items = getDemandItems(runId).map(item => ({ ...item, restore:item.issued_quantity-item.corrected_quantity })).filter(item => item.restore > 0);
   if (!items.length) return res.status(400).json({ error: 'To zapotrzebowanie zostało już w całości cofnięte.' });
   db.exec('BEGIN');
   try {
     const restore = db.prepare('UPDATE products SET quantity=quantity+?, updated_at=CURRENT_TIMESTAMP WHERE id=?');
-    const correction = db.prepare('UPDATE demand_items SET corrected_quantity=quantity WHERE demand_run_id=? AND product_id=?');
+    const correction = db.prepare('UPDATE demand_items SET corrected_quantity=COALESCE(issued_quantity, quantity) WHERE demand_run_id=? AND product_id=?');
     const movement = db.prepare("INSERT INTO movements (product_id, type, quantity, note) VALUES (?, 'add', ?, ?)");
     items.forEach(item => { restore.run(item.restore, item.product_id); correction.run(runId, item.product_id); movement.run(item.product_id, item.restore, `Cofnięcie zapotrzebowania #${runId}`); });
     db.prepare('UPDATE demand_runs SET reversed_at=CURRENT_TIMESTAMP WHERE id=?').run(runId);

@@ -7,7 +7,7 @@
   const status = document.querySelector('#barcodeStatus');
   const result = document.querySelector('#barcodeResult');
   const addMissing = document.querySelector('#barcodeAddMissing');
-  let stream = null, detector = null, timer = null, currentCode = '', zxingControls = null, captureTarget = '', addDeliveryFlow = false, groupedDeliveryFlow = false;
+  let stream = null, detector = null, timer = null, currentCode = '', zxingControls = null, captureTarget = '', addDeliveryFlow = false, groupedDeliveryFlow = false, resumeGroupedOnClose = false;
   const skipToManual = document.querySelector('#barcodeSkipToManual');
 
   const cleanCode = value => String(value || '').trim().replace(/[^0-9A-Za-z-]/g, '').toUpperCase();
@@ -51,6 +51,7 @@
       if (product) {
         status.textContent = 'Znaleziono artykuł. Uzupełniam nową dostawę…';
         const addToGroup = groupedDeliveryFlow;
+        if (addToGroup) resumeGroupedOnClose = false;
         stopCamera();
         dialog.close();
         if (addToGroup) window.openGroupedDeliveryItem?.(product, code);
@@ -121,8 +122,11 @@
   function addProductWithCode() {
     if (!currentCode) return;
     if (addDeliveryFlow) {
+      const isGroupedDelivery = groupedDeliveryFlow;
+      if (isGroupedDelivery) resumeGroupedOnClose = false;
       dialog.close();
-      window.openAddDeliveryForm?.(null, currentCode);
+      if (isGroupedDelivery) window.openManualDeliveryItem?.(currentCode);
+      else window.openAddDeliveryForm?.(null, currentCode);
       return;
     }
     dialog.close(); document.querySelector('#add').click();
@@ -164,11 +168,12 @@
   function openGroupedDeliveryBarcode() {
     addDeliveryFlow = true;
     groupedDeliveryFlow = true;
+    resumeGroupedOnClose = true;
     captureTarget = '';
     reset();
     skipToManual.hidden = false;
     dialog.querySelector('h2').textContent = 'Zeskanuj produkt z dostawy';
-    status.textContent = 'Zeskanuj kod produktu. Nieznany produkt możesz dodać standardowym formularzem.';
+    status.textContent = 'Zeskanuj kod produktu. Nieznany produkt możesz dodać ręcznie do bieżącej dostawy.';
     dialog.showModal();
     startCamera();
   }
@@ -186,7 +191,17 @@
   manual.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); lookup(manual.value); } });
   result.addEventListener('click', event => { const button = event.target.closest('[data-open-product]'); if (button) openProduct(button.dataset.openProduct); });
   addMissing.addEventListener('click', addProductWithCode);
-  skipToManual.addEventListener('click', () => { dialog.close(); window.openAddDeliveryForm?.(null, ''); });
+  skipToManual.addEventListener('click', () => {
+    const isGroupedDelivery = groupedDeliveryFlow;
+    if (isGroupedDelivery) resumeGroupedOnClose = false;
+    dialog.close();
+    if (isGroupedDelivery) window.openManualDeliveryItem?.('');
+    else window.openAddDeliveryForm?.(null, '');
+  });
   ['closeBarcode', 'cancelBarcode'].forEach(id => document.querySelector(`#${id}`).addEventListener('click', () => dialog.close()));
-  dialog.addEventListener('close', () => { stopCamera(); captureTarget = ''; addDeliveryFlow = false; groupedDeliveryFlow = false; });
+  dialog.addEventListener('close', () => {
+    const shouldResumeGroupedDelivery = resumeGroupedOnClose && groupedDeliveryFlow;
+    stopCamera(); captureTarget = ''; addDeliveryFlow = false; groupedDeliveryFlow = false; resumeGroupedOnClose = false;
+    if (shouldResumeGroupedDelivery) window.resumeGroupedDelivery?.();
+  });
 })();

@@ -232,6 +232,29 @@ html[data-theme="dark"] .shopping-complete {
   border-color: #4f8a5f;
 }
 
+html[data-theme="dark"] .manual-shopping-form,
+html[data-theme="dark"] .shopping-list-summary {
+  background: #1c2b23;
+  border-color: #42584c;
+  color: var(--ink);
+}
+
+html[data-theme="dark"] .shopping-pending h3,
+html[data-theme="dark"] .shopping-completed h3,
+html[data-theme="dark"] .shopping-workflow-item small {
+  color: var(--muted);
+}
+
+html[data-theme="dark"] .shopping-item-numbers strong {
+  color: #ffaaa1;
+}
+
+html[data-theme="dark"] .shopping-remove {
+  background: #39211f;
+  border-color: #754540;
+  color: #ffaaa1;
+}
+
 html[data-theme="dark"] .shopping-purchased {
   background: #286f43;
   color: #fff;
