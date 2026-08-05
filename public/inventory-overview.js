@@ -43,7 +43,6 @@
 
   function rowsMarkup(group) {
     return group.rows.map(item => `<tr class="${Number(item.quantity) === 0 ? 'empty-stock' : ''}" data-overview-product="${item.id}">
-      ${group.global ? `<td>${escTable(item.category)}</td>` : ''}
       <td><strong>${escTable(item.name)}</strong></td>
       <td>${escTable(productBrand(item))}</td>
       <td>${escTable(weight(item))}</td>
@@ -58,18 +57,18 @@
     if (section.hidden) return;
     const query = normalize(search.value).trim();
     const items = all.filter(item => !query || normalize(`${item.name} ${item.category} ${productBrand(item)} ${weight(item)} ${item.barcode || ''}`).includes(query));
-    const categories = activeSort
-      ? [{ name: `Wszystkie produkty — ${sortLabel[activeSort.field].toLocaleLowerCase('pl-PL')}`, rows:sortRows(items), global:true }]
-      : [...new Set(items.map(item => item.category))].sort((a, b) => a.localeCompare(b, 'pl')).map(category => ({ name:category, rows:sortRows(items.filter(item => item.category === category)), global:false }));
+    const categories = [...new Set(items.map(item => item.category))]
+      .sort((a, b) => a.localeCompare(b, 'pl'))
+      .map(category => ({ name:category, rows:sortRows(items.filter(item => item.category === category)) }));
     tables.innerHTML = categories.map(group => {
-      const isOpen = group.global || expandedCategories.has(group.name);
+      const isOpen = expandedCategories.has(group.name);
       return `<article class="inventory-table-card ${isOpen ? 'is-expanded' : 'is-collapsed'}" style="--category-tint:${categoryTone(group.name)}">
         <button type="button" class="inventory-category-toggle" data-overview-category="${escTable(group.name)}" aria-expanded="${isOpen}">
           <span><b>${escTable(group.name)}</b> <small>${group.rows.length} ${group.rows.length === 1 ? 'produkt' : 'produktów'}</small></span>
           <span class="inventory-toggle-label">${isOpen ? 'Zwiń' : 'Rozwiń'} <i>${isOpen ? '⌃' : '⌄'}</i></span>
         </button>
         <div class="inventory-table-wrap" ${isOpen ? '' : 'hidden'}><table><thead><tr>
-          ${group.global ? '<th>Kategoria</th>' : ''}<th>${sortHeader('name')}</th><th>${sortHeader('brand')}</th><th>${sortHeader('weight')}</th><th>${sortHeader('quantity')}</th><th>${sortHeader('expiration')}</th><th title="Kod kreskowy">Kod</th><th></th>
+          <th>${sortHeader('name')}</th><th>${sortHeader('brand')}</th><th>${sortHeader('weight')}</th><th>${sortHeader('quantity')}</th><th>${sortHeader('expiration')}</th><th title="Kod kreskowy">Kod</th><th></th>
         </tr></thead><tbody>${rowsMarkup(group)}</tbody></table></div>
       </article>`;
     }).join('') || '<p class="demand-status">Nie znaleziono produktów pasujących do wyszukiwania.</p>';
@@ -95,7 +94,7 @@
     const sort = event.target.closest('[data-overview-sort]');
     if (sort) {
       const field = sort.dataset.overviewSort;
-      if (activeSort?.field !== field) activeSort = { field, direction: field === 'weight' || field === 'quantity' ? 'desc' : 'asc' };
+      if (activeSort?.field !== field) activeSort = { field, direction:field === 'weight' || field === 'quantity' ? 'desc' : 'asc' };
       else if (field === 'quantity' && activeSort.direction === 'desc') activeSort = { field, direction:'asc' };
       else activeSort = null;
       renderOverview();
