@@ -23,6 +23,34 @@
   const unique = values => [...new Set(values.filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pl'));
   let deliveryItems = [];
   let pendingProduct = null;
+  const draftKey = 'zapo-delivery-draft-v1';
+  let draftRestored = false;
+
+  function saveDraft() {
+    const supplier = document.querySelector('#deliverySupplier').value;
+    const received_date = document.querySelector('#deliveryReceived').value;
+    const note = document.querySelector('#deliveryNote').value;
+    if (!supplier.trim() && !note.trim() && !deliveryItems.length) { sessionStorage.removeItem(draftKey); return; }
+    const items = deliveryItems.map(item => ({ product:item.product, draft:item.draft || null, quantity:item.quantity, expiration_date:item.expiration_date, image_data:item.image_data || '' }));
+    try { sessionStorage.setItem(draftKey, JSON.stringify({ supplier, received_date, note, items })); }
+    catch (_) {
+      try { sessionStorage.setItem(draftKey, JSON.stringify({ supplier, received_date, note, items:items.map(item => ({ ...item, image_data:'', product:{ ...item.product, image_data:'' }, draft:item.draft ? { ...item.draft, image_data:'' } : null })) })); } catch (_) {}
+    }
+  }
+  function clearDraft() { sessionStorage.removeItem(draftKey); draftRestored = false; }
+  function restoreDraft() {
+    if (draftRestored) return deliveryItems.length || Boolean(document.querySelector('#deliverySupplier').value || document.querySelector('#deliveryNote').value);
+    draftRestored = true;
+    try {
+      const draft = JSON.parse(sessionStorage.getItem(draftKey) || 'null');
+      if (!draft) return false;
+      document.querySelector('#deliverySupplier').value = draft.supplier || '';
+      document.querySelector('#deliveryReceived').value = draft.received_date || today();
+      document.querySelector('#deliveryNote').value = draft.note || '';
+      deliveryItems = Array.isArray(draft.items) ? draft.items.filter(item => item?.product).map(item => ({ ...item, product:all.find(product => Number(product.id) === Number(item.product.id)) || item.product })) : [];
+      return true;
+    } catch (_) { clearDraft(); return false; }
+  }
 
   function setOptions(id, values) {
     document.querySelector(`#${id}`).innerHTML = unique(values).map(value => `<option value="${escapeHtml(value)}"></option>`).join('');
@@ -48,12 +76,20 @@
         <strong>${item.quantity}<small>${escapeHtml(item.product.unit)}</small></strong>
         <button type="button" class="delivery-line-remove" data-delivery-remove="${index}" aria-label="Usuń z dostawy">×</button>
       </article>`).join('') : '<div class="delivery-empty"><b>Brak produktów w tej dostawie.</b><span>Zeskanuj kod lub dodaj pozycję ręcznie — magazyn jeszcze się nie zmieni.</span></div>';
+    saveDraft();
   }
 
+  document.querySelector('#deliverySupplier').addEventListener('input', saveDraft);
+  document.querySelector('#deliveryReceived').addEventListener('input', saveDraft);
+  document.querySelector('#deliveryNote').addEventListener('input', saveDraft);
+  dialog.addEventListener('close', saveDraft);
+
   function openDelivery() {
-    deliveryItems = [];
-    document.querySelector('#deliveryForm').reset();
-    document.querySelector('#deliveryReceived').value = today();
+    if (!restoreDraft()) {
+      deliveryItems = [];
+      document.querySelector('#deliveryForm').reset();
+      document.querySelector('#deliveryReceived').value = today();
+    }
     renderLines();
     dialog.showModal();
   }
@@ -203,8 +239,10 @@
         note: document.querySelector('#deliveryNote').value,
         items: deliveryItems.map(item => ({ product_id: item.draft ? null : item.product.id, new_product: item.draft || null, quantity: item.quantity, expiration_date: item.expiration_date }))
       }) });
-      dialog.close();
       deliveryItems = [];
+      document.querySelector('#deliveryForm').reset();
+      clearDraft();
+      dialog.close();
       await load();
       await openHistory();
     } catch (error) {
@@ -215,7 +253,13 @@
     }
   });
 
-  ['closeDelivery', 'cancelDelivery'].forEach(id => document.querySelector(`#${id}`).addEventListener('click', () => dialog.close()));
+  document.querySelector('#closeDelivery').addEventListener('click', () => dialog.close());
+  document.querySelector('#cancelDelivery').addEventListener('click', () => {
+    deliveryItems = [];
+    document.querySelector('#deliveryForm').reset();
+    clearDraft();
+    dialog.close();
+  });
   ['closeDeliveryItem', 'cancelDeliveryItem'].forEach(id => document.querySelector(`#${id}`).addEventListener('click', () => {
     itemDialog.close(); pendingProduct = null; if (!dialog.open) dialog.showModal();
   }));
