@@ -16,7 +16,30 @@ if errorlevel 1 (
   exit /b 1
 )
 
-echo Sprawdzam gotowe zmiany...
+echo Przygotowuje zmiany do wyslania...
+rem Baza danych zostaje na komputerze/Railway i nigdy nie jest wysylana przez ten skrót.
+git add -A -- . ":(exclude)zapobetterworkplace.db"
+if errorlevel 1 (
+  echo.
+  echo Nie udalo sie przygotowac zmian.
+  pause
+  exit /b 1
+)
+
+git diff --cached --quiet
+if errorlevel 1 (
+  git commit -m "Aktualizacja ZapoBetterWorkPlace"
+  if errorlevel 1 (
+    echo.
+    echo Nie udalo sie zapisac aktualizacji.
+    pause
+    exit /b 1
+  )
+) else (
+  echo Nie ma nowych plikow do wyslania.
+)
+
+echo Wysylam do GitHuba...
 git push origin main
 if errorlevel 1 (
   echo.
