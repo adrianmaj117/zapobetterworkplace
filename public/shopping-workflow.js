@@ -99,7 +99,7 @@
       if (complete) await completeItem(complete.dataset.shoppingComplete);
       else {
         const item = activeList?.items?.find(entry => Number(entry.id) === Number(remove.dataset.shoppingRemove));
-        if (item && !confirm(`Usunąć „${item.name}” z listy zakupów? Powiązany brak w Historii dnia przestanie być oznaczony na czerwono.`)) return;
+        if (item && !await window.showAppConfirm(`Usunąć „${item.name}” z listy zakupów? Powiązany brak w Historii dnia przestanie być oznaczony na czerwono.`)) return;
         await api(`/api/shopping-lists/items/${remove.dataset.shoppingRemove}`, { method: 'DELETE' });
         await refresh();
       }

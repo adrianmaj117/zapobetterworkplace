@@ -224,7 +224,7 @@
     const renameButton = event.target.closest('.use-demand-name');
     if (renameButton) {
       const row = renameButton.closest('.demand-row'), product = all.find(item => item.id === Number(row.querySelector('.demand-product').value)), name = proposedName(row.querySelector('.demand-raw').value);
-      if (!product || !name || !confirm(`Zmienić nazwę w magazynie na „${name}”?`)) return;
+      if (!product || !name || !await window.showAppConfirm(`Zmienić nazwę w magazynie na „${name}”?`)) return;
       renameButton.disabled = true;
       try {
         const updated = await api(`/api/products/${product.id}`, { method:'PUT', body:JSON.stringify({ ...product, name }) });
@@ -249,7 +249,7 @@
     const items = [...rows.querySelectorAll('.demand-row')].map(row => ({ product_id:Number(row.querySelector('.demand-product').value), quantity:Number(row.querySelector('.demand-quantity').value) })).filter(item => Number.isInteger(item.product_id) && Number.isFinite(item.quantity) && item.quantity > 0);
     if (!items.length) return alert('Wybierz przynajmniej jeden produkt i podaj jego ilość.');
     const password = document.querySelector('#demandTextPassword').value; if (!password) return alert('Wpisz hasło zatwierdzające.');
-    if (!confirm(`Odjąć ze stanów ${items.length} ${items.length === 1 ? 'pozycję' : 'pozycje'}?`)) return;
+    if (!await window.showAppConfirm(`Odjąć ze stanów ${items.length} ${items.length === 1 ? 'pozycję' : 'pozycje'}?`)) return;
     apply.disabled = true;
     try {
       const result = await api('/api/demand/apply', { method:'POST', body:JSON.stringify({ items, password, demand_date:document.querySelector('#demandTextDate').value, source_name:'Opis ręczny zapotrzebowania', recognized_text:input.value }) });

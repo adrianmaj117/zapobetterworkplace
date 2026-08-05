@@ -21,6 +21,8 @@
   <link rel="stylesheet" href="shopping-workflow.css">
   <link rel="stylesheet" href="user-panel.css">
   <link rel="stylesheet" href="dark-panel-contrast.css">
+  <link rel="stylesheet" href="app-notices.css">
+  <link rel="stylesheet" href="dark-visibility.css">
   <script src="dark-mode.js"></script>
   <style>
     .tile .path-edit,.tile .image-edit{opacity:0;pointer-events:none;transition:opacity .18s ease}
@@ -32,6 +34,15 @@
   <div id="loadingOverlay" class="loading-overlay" aria-live="polite" aria-busy="true" hidden>
     <div class="loading-bus-wrap"><img src="assets/delivery-bus-loading.png" alt="Trwa ładowanie" class="loading-bus"><p>Ładowanie danych…</p></div>
   </div>
+  <dialog id="appNoticeDialog" class="app-notice-dialog" aria-labelledby="appNoticeTitle">
+    <div class="app-notice-card">
+      <img src="assets/delivery-bus-loading.png" class="app-notice-bus" alt="">
+      <p class="eyebrow" id="appNoticeKicker">MAGAZYN BETTERWORKPLACE</p>
+      <h2 id="appNoticeTitle">Informacja</h2>
+      <p id="appNoticeMessage"></p>
+      <div class="app-notice-actions"><button type="button" id="appNoticeCancel" class="button ghost">Anuluj</button><button type="button" id="appNoticeAccept" class="button primary">OK</button></div>
+    </div>
+  </dialog>
   <div class="warehouse-background" aria-hidden="true"></div>
   <div id="localModeWarning" class="local-mode-warning" hidden>Otwarta jest lokalna wersja magazynu. Dane z telefonu zobaczysz w wersji online: <a href="https://zapobetterworkplace-production.up.railway.app">Otwórz wspólny magazyn</a></div>
   <header class="topbar warehouse-topbar">
@@ -297,6 +308,7 @@
       </div>
     </form>
   </dialog>
+  <script src="app-notices.js"></script>
   <script src="warehouse.js"></script>
   <script src="batches-view.js"></script>
   <script src="product-detail.js"></script>
@@ -426,7 +438,7 @@
       const button = event.target.closest('[data-product-delete]'); if (!button) return;
       event.preventDefault(); event.stopImmediatePropagation();
       const product = all.find(item => item.id === Number(button.dataset.productDelete));
-      if (!product || !confirm(`Usunąć artykuł „${product.name}” wraz z jego stanem?`)) return;
+      if (!product || !await window.showAppConfirm(`Usunąć artykuł „${product.name}” wraz z jego stanem?`)) return;
       try { await api(`/api/products/${product.id}`, { method: 'DELETE' }); await load(); }
       catch (error) { alert(error.message); }
     }, true);
@@ -459,7 +471,7 @@
       event.preventDefault(); event.stopImmediatePropagation();
       const password = prompt('Wpisz hasło, aby usunąć kafelek i jego produkty:');
       if (password !== '123') return alert('Nieprawidłowe hasło.');
-      if (!confirm(`Usunąć kafelek „${button.dataset.deletePath}” oraz wszystkie produkty w tej gałęzi?`)) return;
+      if (!await window.showAppConfirm(`Usunąć kafelek „${button.dataset.deletePath}” oraz wszystkie produkty w tej gałęzi?`)) return;
       try {
         await api('/api/paths', { method:'DELETE', body:JSON.stringify({ ...pathData(button.dataset.deletePath), password }) });
         savedPaths = await api('/api/paths'); state = { level:'category' }; await load();
@@ -515,7 +527,7 @@
     });
     document.addEventListener('click', async event => {
       if (event.target.closest('#bulkDelete')) {
-        if (!confirm(`Usunąć ${selectedProducts.size} zaznaczone artykuły? Tej operacji nie można cofnąć.`)) return;
+        if (!await window.showAppConfirm(`Usunąć ${selectedProducts.size} zaznaczone artykuły? Tej operacji nie można cofnąć.`)) return;
         try { await api('/api/products/bulk-delete', { method:'POST', body:JSON.stringify({ ids:[...selectedProducts] }) }); selectedProducts.clear(); refreshBulkBar(); await load(); } catch (error) { alert(error.message); }
       }
       if (event.target.closest('#bulkMove')) {

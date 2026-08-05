@@ -103,7 +103,7 @@
     const password = prompt('Wpisz hasło, aby zatwierdzić korektę:'); if (password === null) return;
     try {
       if (reverse) {
-        if (!confirm('Cofnąć całe zapotrzebowanie i przywrócić wszystkie jeszcze nieprzywrócone ilości?')) return;
+        if (!await window.showAppConfirm('Cofnąć całe zapotrzebowanie i przywrócić wszystkie jeszcze nieprzywrócone ilości?')) return;
         await api(`/api/demand/runs/${runId}/reverse`, { method:'POST', body:JSON.stringify({ password }) });
       } else {
         const card = reverse || correct;

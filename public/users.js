@@ -84,7 +84,7 @@
   });
   document.querySelector('#deleteUser').addEventListener('click', async () => {
     const id = Number(document.querySelector('#userId').value || 0);
-    if (!id || !confirm('Usunąć to konto użytkownika?')) return;
+    if (!id || !await window.showAppConfirm('Usunąć to konto użytkownika?')) return;
     try { await api(`/api/users/${id}`, { method: 'DELETE' }); resetForm(); await refresh(); }
     catch (error) { alert(error.message); }
   });

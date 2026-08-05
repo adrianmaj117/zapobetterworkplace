@@ -46,12 +46,12 @@
     };
     try {
       if (clean(payload.category).includes('nabiał') && !payload.expiration_date) {
-        const continueWithoutDate = confirm('Nabiał powinien mieć wpisany termin ważności. Czy na pewno chcesz dodać dostawę bez daty?');
+        const continueWithoutDate = await window.showAppConfirm('Nabiał powinien mieć wpisany termin ważności. Czy na pewno chcesz dodać dostawę bez daty?');
         if (!continueWithoutDate) return;
       }
       const existing = findExistingDelivery(payload);
       if (existing) {
-        const proceed = confirm(`„${existing.name}” jest już w magazynie. Dodać ${payload.quantity} ${existing.unit} jako nową partię z osobnym terminem ważności?`);
+        const proceed = await window.showAppConfirm(`„${existing.name}” jest już w magazynie. Dodać ${payload.quantity} ${existing.unit} jako nową partię z osobnym terminem ważności?`);
         if (!proceed) return;
         await api(`/api/products/${existing.id}/batches`, {
           method: 'POST',

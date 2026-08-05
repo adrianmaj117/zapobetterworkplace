@@ -206,7 +206,7 @@
       return;
     }
     const button = event.target.closest('[data-purchase-delete]');
-    if (!button || !confirm('Usunąć ten zapis faktury?')) return;
+    if (!button || !await window.showAppConfirm('Usunąć ten zapis faktury?')) return;
     const password = prompt('Wpisz hasło, aby trwale usunąć fakturę:');
     if (password === null) return;
     if (password !== '123') { alert('Nieprawidłowe hasło.'); return; }

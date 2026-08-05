@@ -47,7 +47,7 @@
   document.querySelector('#manualDemandForm').addEventListener('submit', async event => {
     event.preventDefault(); const items = chosenItems(), password = document.querySelector('#manualDemandPassword').value;
     if (!items.length) return alert('Brak produktów do odjęcia.'); if (!password) return alert('Wpisz hasło zatwierdzające.');
-    if (!confirm(`Odjąć ze stanów ${items.length} ${items.length === 1 ? 'produkt' : 'produkty'} i zapisać raport w Historii dnia?`)) return;
+    if (!await window.showAppConfirm(`Odjąć ze stanów ${items.length} ${items.length === 1 ? 'produkt' : 'produkty'} i zapisać raport w Historii dnia?`)) return;
     const button=document.querySelector('#applyManualDemand'); button.disabled=true;
     try { const result=await api('/api/demand/apply',{method:'POST',body:JSON.stringify({items,password,demand_date:document.querySelector('#manualDemandDate').value,source_name:'Zapotrzebowanie ręczne',recognized_text:items.map(item=>{const product=all.find(entry=>entry.id===item.product_id);return `${product.name} — ${item.quantity} ${product.unit}`}).join('\n')})}); demandDialog.close(); const missing=result.shortages || []; alert(missing.length ? `Zapisano zapotrzebowanie. Odjęto dostępne ilości, a braki (${missing.length}) są już na Liście zakupów.` : `Zapisano ręczne zapotrzebowanie. Odjęto ${result.applied} ${result.applied === 1 ? 'produkt' : 'produkty'}.`); await load(); } catch(error) { alert(error.message); } finally { button.disabled=false; }
   });

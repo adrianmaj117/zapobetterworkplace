@@ -101,7 +101,7 @@
     const items = [...rows.querySelectorAll('.demand-row')].map(row => ({ product_id:Number(row.querySelector('.demand-product').value), quantity:Number(row.querySelector('.demand-quantity').value) })).filter(item => Number.isInteger(item.product_id) && Number.isFinite(item.quantity) && item.quantity > 0);
     if (!items.length) return alert('Wybierz przynajmniej jeden produkt i podaj jego ilość.');
     const password = document.querySelector('#demandPassword').value; if (!password) return alert('Wpisz hasło zatwierdzające.');
-    if (!confirm(`Odjąć ze stanów ${items.length} ${items.length === 1 ? 'pozycję' : 'pozycje'}?`)) return;
+    if (!await window.showAppConfirm(`Odjąć ze stanów ${items.length} ${items.length === 1 ? 'pozycję' : 'pozycje'}?`)) return;
     apply.disabled = true;
     try {
       const sourceName = selectedFiles().map(file => file.name).join(', ') || 'zdjęcia zapotrzebowania';
