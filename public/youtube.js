@@ -8,6 +8,10 @@
   const info = document.querySelector('#youtubeInfo');
   const results = document.querySelector('#youtubeResults');
   const player = document.querySelector('#youtubePlayer');
+  const compactScreen = window.matchMedia('(max-width: 700px)');
+  const topbar = document.querySelector('.warehouse-topbar');
+  const themeToggle = document.querySelector('#themeToggle');
+  let mobileOpen = false;
   if (!panel || !form) return;
 
   const esc = value => String(value || '').replace(/[&<>"']/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#039;' })[char]);
@@ -17,14 +21,31 @@
     if (!response.ok) throw new Error(data.error || 'Nie udało się połączyć z YouTube.');
     return data;
   };
-  const setHidden = hidden => {
+  const setDesktopHidden = hidden => {
     panel.hidden = hidden;
     show.hidden = !hidden;
     try { localStorage.setItem('zapo.youtubeHidden', hidden ? '1' : '0'); } catch (_) { /* brak zapisu ustawienia nie blokuje panelu */ }
   };
-  try { setHidden(localStorage.getItem('zapo.youtubeHidden') === '1'); } catch (_) { /* domyślnie widoczny */ }
-  hide.addEventListener('click', () => setHidden(true));
-  show.addEventListener('click', () => setHidden(false));
+  function syncPosition() {
+    if (compactScreen.matches) {
+      if (topbar && themeToggle) topbar.insertBefore(show, themeToggle.nextSibling);
+      panel.hidden = !mobileOpen;
+      show.hidden = false;
+      return;
+    }
+    if (show.parentElement !== document.body) document.body.append(show);
+    try { setDesktopHidden(localStorage.getItem('zapo.youtubeHidden') === '1'); } catch (_) { setDesktopHidden(false); }
+  }
+  syncPosition();
+  compactScreen.addEventListener('change', () => { mobileOpen = false; syncPosition(); });
+  hide.addEventListener('click', () => {
+    if (compactScreen.matches) { mobileOpen = false; syncPosition(); }
+    else setDesktopHidden(true);
+  });
+  show.addEventListener('click', () => {
+    if (compactScreen.matches) { mobileOpen = true; syncPosition(); query.focus(); }
+    else setDesktopHidden(false);
+  });
 
   form.addEventListener('submit', async event => {
     event.preventDefault();
