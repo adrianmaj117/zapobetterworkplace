@@ -119,6 +119,7 @@
       <article class="purchase-item">
         ${item.image_data ? `<button type="button" class="purchase-image-open" data-invoice-image="${item.id}" title="Pokaż zdjęcie faktury w pełnym widoku"><img src="${item.image_data}" alt="Zdjęcie faktury"></button>` : '<div class="purchase-no-image">Faktura</div>'}
         <div><b>${safe(item.supplier)}</b><small>${item.invoice_date ? date(item.invoice_date) : 'brak daty'}${item.note ? ` · ${safe(item.note)}` : ''}</small></div>
+        <small class="purchase-owner">Dodane przez: ${safe(item.wallet_owner || 'Adrian')}</small>
         <strong>${money(item.gross_amount)}</strong>
         ${item.can_manage ? `<button type="button" class="small-btn purchase-edit" data-purchase-edit="${item.id}">Edytuj</button><button type="button" class="small-btn purchase-delete" data-purchase-delete="${item.id}" title="Usuń wpis">Usuń</button>` : '<span class="purchase-readonly">Tylko podgląd</span>'}
       </article>`).join('') : '<p class="purchase-empty">Nie zapisano jeszcze żadnej faktury.</p>';
