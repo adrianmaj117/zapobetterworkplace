@@ -6,6 +6,7 @@ const { DatabaseSync } = require('node:sqlite');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const youtubeCache = new Map();
 const bundledDbPath = path.join(__dirname, 'zapobetterworkplace.db');
 const dbPath = process.env.DATABASE_PATH || bundledDbPath;
 if (dbPath !== bundledDbPath && !fs.existsSync(dbPath) && fs.existsSync(bundledDbPath)) {
@@ -396,6 +397,31 @@ app.use('/api', (req, res, next) => {
   next();
 });
 app.get('/api/session', (req, res) => res.json({ user: req.user, capabilities: capabilities(req.user) }));
+app.get('/api/youtube/search', async (req, res) => {
+  const query = String(req.query.q || '').trim().slice(0, 100);
+  if (!query) return res.status(400).json({ error: 'Wpisz, czego szukasz na YouTube.' });
+  const key = String(process.env.YOUTUBE_API_KEY || '').trim();
+  if (!key) return res.status(503).json({ error: 'YouTube nie jest jeszcze skonfigurowany. Dodaj zmienną YOUTUBE_API_KEY w Railway.' });
+
+  const cached = youtubeCache.get(query.toLowerCase());
+  if (cached && Date.now() - cached.savedAt < 10 * 60 * 1000) return res.json(cached.results);
+  try {
+    const params = new URLSearchParams({ part: 'snippet', type: 'video', maxResults: '8', q: query, key });
+    const response = await fetch(`https://www.googleapis.com/youtube/v3/search?${params}`);
+    const body = await response.json();
+    if (!response.ok) throw new Error(body?.error?.message || 'Nie udało się pobrać wyników z YouTube.');
+    const results = (body.items || []).map(item => ({
+      id: item.id?.videoId,
+      title: item.snippet?.title || 'Film z YouTube',
+      channel: item.snippet?.channelTitle || '',
+      thumbnail: item.snippet?.thumbnails?.medium?.url || item.snippet?.thumbnails?.default?.url || ''
+    })).filter(item => item.id);
+    youtubeCache.set(query.toLowerCase(), { savedAt: Date.now(), results });
+    res.json(results);
+  } catch (error) {
+    res.status(502).json({ error: error.message || 'YouTube chwilowo nie odpowiada.' });
+  }
+});
 app.get('/api/users', adminOnly, (req, res) => {
   res.json(db.prepare('SELECT id, username, display_name, role, active, created_at FROM users ORDER BY role DESC, display_name COLLATE NOCASE, username COLLATE NOCASE').all().map(publicUser));
 });

@@ -24,6 +24,7 @@
   <link rel="stylesheet" href="app-notices.css">
   <link rel="stylesheet" href="dark-visibility.css?v=4">
   <link rel="stylesheet" href="dark-wallet-force.css?v=1">
+  <link rel="stylesheet" href="youtube-panel.css?v=1">
   <script src="dark-mode.js"></script>
   <style>
     .tile .path-edit,.tile .image-edit{opacity:0;pointer-events:none;transition:opacity .18s ease}
@@ -45,6 +46,14 @@
     </div>
   </dialog>
   <div class="warehouse-background" aria-hidden="true"></div>
+  <aside id="youtubePanel" class="youtube-panel" aria-label="YouTube w magazynie">
+    <div class="youtube-panel-head"><strong>YouTube</strong><button type="button" id="youtubeHide" aria-label="Ukryj YouTube">×</button></div>
+    <form id="youtubeSearchForm" class="youtube-search"><input id="youtubeQuery" type="search" maxlength="100" placeholder="Szukaj na YouTube"><button type="submit">Szukaj</button></form>
+    <p id="youtubeInfo" class="youtube-info">Wyszukaj film, poradnik lub muzykę.</p>
+    <div id="youtubePlayer" class="youtube-player" hidden></div>
+    <div id="youtubeResults" class="youtube-results"></div>
+  </aside>
+  <button type="button" id="youtubeShow" class="youtube-show" hidden>▶ YouTube</button>
   <div id="localModeWarning" class="local-mode-warning" hidden>Otwarta jest lokalna wersja magazynu. Dane z telefonu zobaczysz w wersji online: <a href="https://zapobetterworkplace-production.up.railway.app">Otwórz wspólny magazyn</a></div>
   <header class="topbar warehouse-topbar">
     <button type="button" id="home" class="brand warehouse-brand brand-home" title="Wróć do menu głównego">
@@ -662,5 +671,6 @@
   <script src="delivery.js" defer></script>
   <script src="user-panel.js" defer></script>
   <script src="loading-indicator.js" defer></script>
+  <script src="youtube.js" defer></script>
 </body>
 </html>
