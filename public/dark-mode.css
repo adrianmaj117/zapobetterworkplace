@@ -317,3 +317,22 @@ html[data-theme="dark"] .login-card small {
     animation-duration: .01ms !important;
   }
 }
+
+/* Szczegóły produktu mają własny, jasny projekt. Te reguły są na końcu,
+   żeby w ciemnym trybie tekst pozostał równie czytelny jak w pozostałej aplikacji. */
+html[data-theme="dark"] .product-detail-dialog { background:#101a15!important; color:#f1f7f2!important; }
+html[data-theme="dark"] .product-detail-dialog .modal-head { background:#19271f!important; border-color:#3b5346!important; }
+html[data-theme="dark"] .product-detail-dialog .modal-head h2,
+html[data-theme="dark"] .product-detail-dialog h3,
+html[data-theme="dark"] .product-detail-dialog strong { color:#f4faf5!important; }
+html[data-theme="dark"] .product-detail-main { background:linear-gradient(135deg,#20372a,#16251e 65%,#1e3026)!important; border-color:#456454!important; }
+html[data-theme="dark"] .product-detail-main>img { background:#fff!important; border-color:#6f977b!important; }
+html[data-theme="dark"] .product-detail-main>div>p:first-child { background:#294334!important; color:#d7f2dd!important; }
+html[data-theme="dark"] .product-detail-main>div>p:not(:first-child) { background:#1b2d23!important; border-left-color:#69c78a!important; color:#d8e8dc!important; }
+html[data-theme="dark"] .detail-stock { background:#122018!important; border-color:#609173!important; }
+html[data-theme="dark"] .product-delivery-history,
+html[data-theme="dark"] .detail-history-row { background:#18271f!important; border-color:#405a4b!important; }
+html[data-theme="dark"] .detail-history-row small,
+html[data-theme="dark"] .product-detail-dialog .detail-empty { color:#c0d2c5!important; }
+
+.loading-overlay{position:fixed;z-index:9999;inset:0;display:grid;place-items:center;background:#07100abf;backdrop-filter:blur(3px)}.loading-bus-wrap{display:grid;place-items:center;gap:2px;min-width:280px;padding:24px 30px;border:1px solid #83b98f;border-radius:22px;background:#f8fcf8;color:#1e563c;box-shadow:0 22px 60px #0008;overflow:hidden}.loading-bus{width:245px;max-width:70vw;mix-blend-mode:screen;animation:delivery-bus-drive 1.8s ease-in-out infinite}.loading-bus-wrap p{margin:0;font-size:13px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}.loading-overlay[hidden]{display:none}@keyframes delivery-bus-drive{0%{transform:translateX(-38px) scale(.94)}45%{transform:translateX(10px) scale(1)}65%{transform:translateX(4px) scale(1)}100%{transform:translateX(48px) scale(1.04)}}html[data-theme="dark"] .loading-bus-wrap{background:#17261d;color:#eff8f0;border-color:#4d8d63}@media(prefers-reduced-motion:reduce){.loading-bus{animation:none}}

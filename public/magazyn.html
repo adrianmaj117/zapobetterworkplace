@@ -28,6 +28,9 @@
   </style>
 </head>
 <body class="warehouse-body">
+  <div id="loadingOverlay" class="loading-overlay" aria-live="polite" aria-busy="true" hidden>
+    <div class="loading-bus-wrap"><img src="assets/delivery-bus-loading.png" alt="Trwa ładowanie" class="loading-bus"><p>Ładowanie danych…</p></div>
+  </div>
   <div class="warehouse-background" aria-hidden="true"></div>
   <div id="localModeWarning" class="local-mode-warning" hidden>Otwarta jest lokalna wersja magazynu. Dane z telefonu zobaczysz w wersji online: <a href="https://zapobetterworkplace-production.up.railway.app">Otwórz wspólny magazyn</a></div>
   <header class="topbar warehouse-topbar">
@@ -643,5 +646,6 @@
   <script src="users.js" defer></script>
   <script src="delivery.js" defer></script>
   <script src="user-panel.js" defer></script>
+  <script src="loading-indicator.js" defer></script>
 </body>
 </html>
