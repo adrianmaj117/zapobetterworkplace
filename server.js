@@ -86,15 +86,47 @@ db.exec(`CREATE TABLE IF NOT EXISTS users (
   username TEXT NOT NULL UNIQUE COLLATE NOCASE,
   display_name TEXT NOT NULL,
   password_hash TEXT NOT NULL,
-  role TEXT NOT NULL DEFAULT 'worker' CHECK(role IN ('admin', 'worker')),
+  role TEXT NOT NULL DEFAULT 'worker' CHECK(role IN ('admin', 'procurement', 'leader', 'worker')),
+  hidden_admin INTEGER NOT NULL DEFAULT 0,
   active INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 )`);
+// Starsze wdrożenia miały ograniczenie ról wyłącznie do admin/worker.
+// SQLite nie pozwala rozszerzyć CHECK bez przebudowy tabeli, dlatego robimy
+// jednorazową, zachowującą konta migrację.
+const userTableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='users'").get()?.sql || '';
+if (!userTableSql.includes("'procurement'")) {
+  db.exec(`ALTER TABLE users RENAME TO users_legacy;
+    CREATE TABLE users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+      display_name TEXT NOT NULL,
+      password_hash TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT 'worker' CHECK(role IN ('admin', 'procurement', 'leader', 'worker')),
+      hidden_admin INTEGER NOT NULL DEFAULT 0,
+      active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    INSERT INTO users (id, username, display_name, password_hash, role, active, created_at, updated_at)
+      SELECT id, username, display_name, password_hash, role, active, created_at, updated_at FROM users_legacy;
+    DROP TABLE users_legacy;`);
+}
+if (!db.prepare('PRAGMA table_info(users)').all().some(column => column.name === 'hidden_admin')) db.exec('ALTER TABLE users ADD COLUMN hidden_admin INTEGER NOT NULL DEFAULT 0');
 if (!db.prepare('SELECT id FROM users WHERE username=?').get('adminkrakow')) {
   db.prepare('INSERT INTO users (username, display_name, password_hash, role) VALUES (?, ?, ?, ?)')
     .run('adminkrakow', 'Admin', passwordHash('krakowstany'), 'admin');
 }
+function ensureAccount(username, displayName, password, role, hiddenAdmin = 0) {
+  if (!db.prepare('SELECT id FROM users WHERE username=?').get(username)) {
+    db.prepare('INSERT INTO users (username, display_name, password_hash, role, hidden_admin) VALUES (?, ?, ?, ?, ?)')
+      .run(username, displayName, passwordHash(password), role, hiddenAdmin);
+  }
+}
+ensureAccount('adrian', 'Adrian', 'adrian', 'procurement', 1);
+ensureAccount('szymon', 'Szymon', '4321', 'leader');
+ensureAccount('uzytkownik', 'Użytkownik', 'uzytkownik', 'worker');
 db.exec(`CREATE TABLE IF NOT EXISTS purchases (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   supplier TEXT NOT NULL DEFAULT 'SELGROS',
@@ -104,6 +136,28 @@ db.exec(`CREATE TABLE IF NOT EXISTS purchases (
   image_data TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 )`);
+if (!db.prepare('PRAGMA table_info(purchases)').all().some(column => column.name === 'wallet_user_id')) db.exec('ALTER TABLE purchases ADD COLUMN wallet_user_id INTEGER');
+db.exec(`CREATE TABLE IF NOT EXISTS wallets (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL UNIQUE,
+  balance REAL NOT NULL DEFAULT 0,
+  active INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS wallet_transactions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  wallet_id INTEGER NOT NULL,
+  amount REAL NOT NULL DEFAULT 0,
+  kind TEXT NOT NULL DEFAULT 'adjustment',
+  note TEXT DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','accepted','rejected')),
+  initiated_by_user_id INTEGER,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  decided_at TEXT,
+  FOREIGN KEY(wallet_id) REFERENCES wallets(id) ON DELETE CASCADE
+);`);
 db.exec(`
   CREATE TABLE IF NOT EXISTS deliveries (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -310,13 +364,20 @@ function authenticated(req) {
   if (user) req.user = user;
   return Boolean(user);
 }
+function isFullAdmin(user) { return user?.role === 'admin' || Boolean(user?.hidden_admin); }
+function roleLabel(user) { return isFullAdmin(user) && user.role === 'procurement' ? 'Zaopatrzenie (pełny dostęp)' : ({ admin: 'Admin', procurement: 'Zaopatrzenie', leader: 'Lider', worker: 'Pracownik' })[user?.role] || 'Pracownik'; }
+function capabilities(user) {
+  const full = isFullAdmin(user); const supply = full || user?.role === 'procurement' || user?.role === 'leader';
+  return { users: full, finance: full, selgros: supply, purchases: supply, delivery: supply, deliveryHistory: supply, inventoryEdit: supply, shopping: supply, demand: Boolean(user), inventoryView: Boolean(user) };
+}
+function allow(capability) { return (req, res, next) => capabilities(req.user)[capability] ? next() : res.status(403).json({ error: 'To konto nie ma dostępu do tej funkcji.' }); }
 function adminOnly(req, res, next) {
-  return req.user?.role === 'admin'
+  return isFullAdmin(req.user)
     ? next()
     : res.status(403).json({ error: 'Tylko administrator może zarządzać użytkownikami.' });
 }
 function publicUser(user) {
-  return { id: user.id, username: user.username, display_name: user.display_name, role: user.role, active: Boolean(user.active), created_at: user.created_at };
+  return { id: user.id, username: user.username, display_name: user.display_name, role: user.role, hidden_admin: Boolean(user.hidden_admin), role_label: roleLabel(user), capabilities: capabilities(user), active: Boolean(user.active), created_at: user.created_at };
 }
 app.post('/api/login', (req, res) => {
   const username = String(req.body?.username || '').trim();
@@ -330,10 +391,11 @@ app.post('/api/login', (req, res) => {
 app.use('/api', (req, res, next) => authenticated(req) ? next() : res.status(401).json({ error: 'Zaloguj się, aby zobaczyć magazyn.' }));
 
 app.use('/api', (req, res, next) => {
+  if (req.method !== 'GET' && (capabilities(req.user).inventoryEdit || req.path === '/demand/apply')) return next();
   if (req.user?.role !== 'admin' && req.method !== 'GET') return res.status(403).json({ error: 'To konto ma dostęp wyłącznie do podglądu. Poproś administratora o wykonanie tej zmiany.' });
   next();
 });
-app.get('/api/session', (req, res) => res.json({ user: req.user }));
+app.get('/api/session', (req, res) => res.json({ user: req.user, capabilities: capabilities(req.user) }));
 app.get('/api/users', adminOnly, (req, res) => {
   res.json(db.prepare('SELECT id, username, display_name, role, active, created_at FROM users ORDER BY role DESC, display_name COLLATE NOCASE, username COLLATE NOCASE').all().map(publicUser));
 });
@@ -341,7 +403,7 @@ app.post('/api/users', adminOnly, (req, res) => {
   const username = String(req.body?.username || '').trim().toLowerCase();
   const displayName = String(req.body?.display_name || '').trim().slice(0, 80) || username;
   const password = String(req.body?.password || '');
-  const role = req.body?.role === 'admin' ? 'admin' : 'worker';
+  const role = ['admin', 'procurement', 'leader', 'worker'].includes(req.body?.role) ? req.body.role : 'worker';
   if (!/^[a-z0-9._-]{3,40}$/i.test(username)) return res.status(400).json({ error: 'Login musi mieć od 3 do 40 znaków (litery, cyfry, kropka, myślnik lub podkreślenie).' });
   if (password.length < 4) return res.status(400).json({ error: 'Hasło musi mieć co najmniej 4 znaki.' });
   try {
@@ -357,7 +419,7 @@ app.put('/api/users/:id', adminOnly, (req, res) => {
   if (!existing) return res.status(404).json({ error: 'Nie znaleziono użytkownika.' });
   const username = String(req.body?.username || existing.username).trim().toLowerCase();
   const displayName = String(req.body?.display_name || '').trim().slice(0, 80) || username;
-  const role = req.body?.role === 'admin' ? 'admin' : 'worker';
+  const role = ['admin', 'procurement', 'leader', 'worker'].includes(req.body?.role) ? req.body.role : 'worker';
   const active = req.body?.active === false ? 0 : 1;
   const password = String(req.body?.password || '');
   if (!/^[a-z0-9._-]{3,40}$/i.test(username)) return res.status(400).json({ error: 'Nieprawidłowy login.' });
@@ -386,6 +448,47 @@ app.delete('/api/users/:id', adminOnly, (req, res) => {
   res.status(204).end();
 });
 
+function walletFor(userId) { return db.prepare('SELECT * FROM wallets WHERE user_id=?').get(userId); }
+function walletData(userId) {
+  const wallet = walletFor(userId);
+  if (!wallet) return { wallet: null, transactions: [] };
+  return { wallet, transactions: db.prepare('SELECT * FROM wallet_transactions WHERE wallet_id=? ORDER BY id DESC').all(wallet.id) };
+}
+app.get('/api/wallet/me', (req, res) => res.json(walletData(req.user.id)));
+app.get('/api/wallet/users', adminOnly, (req, res) => {
+  const users = db.prepare('SELECT * FROM users WHERE active=1 ORDER BY display_name COLLATE NOCASE').all();
+  res.json(users.map(user => ({ user: publicUser(user), ...walletData(user.id) })));
+});
+app.post('/api/wallet/users/:userId', adminOnly, (req, res) => {
+  const userId = Number(req.params.userId); const user = db.prepare('SELECT * FROM users WHERE id=? AND active=1').get(userId);
+  if (!user) return res.status(404).json({ error: 'Nie znaleziono użytkownika.' });
+  if (walletFor(userId)) return res.status(409).json({ error: 'Ten użytkownik ma już portfel.' });
+  const result = db.prepare('INSERT INTO wallets (user_id, balance, active) VALUES (?, 0, 0)').run(userId);
+  db.prepare("INSERT INTO wallet_transactions (wallet_id, amount, kind, note, status, initiated_by_user_id) VALUES (?, 0, 'create', 'Utworzono portfel', 'pending', ?)").run(result.lastInsertRowid, req.user.id);
+  res.status(201).json(walletData(userId));
+});
+app.post('/api/wallet/users/:userId/transactions', adminOnly, (req, res) => {
+  const wallet = walletFor(Number(req.params.userId)); const amount = Number(req.body?.amount);
+  if (!wallet) return res.status(404).json({ error: 'Najpierw załóż portfel temu użytkownikowi.' });
+  if (!Number.isFinite(amount) || amount === 0) return res.status(400).json({ error: 'Wpisz kwotę większą lub mniejszą od zera.' });
+  db.prepare("INSERT INTO wallet_transactions (wallet_id, amount, kind, note, status, initiated_by_user_id) VALUES (?, ?, 'adjustment', ?, 'pending', ?)")
+    .run(wallet.id, amount, String(req.body?.note || '').trim().slice(0, 300), req.user.id);
+  res.status(201).json(walletData(wallet.user_id));
+});
+app.post('/api/wallet/transactions/:id/decide', (req, res) => {
+  const transaction = db.prepare('SELECT t.*, w.user_id FROM wallet_transactions t JOIN wallets w ON w.id=t.wallet_id WHERE t.id=?').get(Number(req.params.id));
+  if (!transaction || transaction.user_id !== req.user.id) return res.status(404).json({ error: 'Nie znaleziono tej operacji portfela.' });
+  if (transaction.status !== 'pending') return res.status(400).json({ error: 'Ta operacja została już rozpatrzona.' });
+  if (passwordHash(req.body?.password) !== db.prepare('SELECT password_hash FROM users WHERE id=?').get(req.user.id).password_hash) return res.status(403).json({ error: 'Nieprawidłowe hasło.' });
+  const accepted = req.body?.accept === true;
+  db.prepare('UPDATE wallet_transactions SET status=?, decided_at=CURRENT_TIMESTAMP WHERE id=?').run(accepted ? 'accepted' : 'rejected', transaction.id);
+  if (accepted) {
+    if (transaction.kind === 'create') db.prepare('UPDATE wallets SET active=1, updated_at=CURRENT_TIMESTAMP WHERE id=?').run(transaction.wallet_id);
+    else db.prepare('UPDATE wallets SET balance=balance+?, updated_at=CURRENT_TIMESTAMP WHERE id=?').run(transaction.amount, transaction.wallet_id);
+  }
+  res.json(walletData(req.user.id));
+});
+
 
 
 function productById(id) {
@@ -408,7 +511,7 @@ function purchaseSummary() {
   return { budget, spent, remaining: budget - spent };
 }
 
-app.get('/api/purchases', (req, res) => {
+app.get('/api/purchases', allow('purchases'), (req, res) => {
   const purchases = db.prepare('SELECT * FROM purchases ORDER BY COALESCE(invoice_date, date(created_at)) DESC, id DESC').all();
   res.json({ ...purchaseSummary(), purchases });
 });
@@ -618,7 +721,7 @@ function deliveryById(id) {
   return delivery;
 }
 
-app.get('/api/deliveries', (req, res) => {
+app.get('/api/deliveries', allow('deliveryHistory'), (req, res) => {
   const rows = db.prepare('SELECT id FROM deliveries ORDER BY received_date DESC, id DESC LIMIT 100').all();
   res.json(rows.map(row => deliveryById(row.id)));
 });
@@ -824,7 +927,7 @@ function shoppingListById(id) {
   list.items = db.prepare("SELECT * FROM shopping_list_items WHERE shopping_list_id=? ORDER BY category COLLATE NOCASE, name COLLATE NOCASE").all(id).filter(item => !isExcludedShoppingItem(item));
   return list;
 }
-app.get('/api/shopping-lists/latest', (req, res) => {
+app.get('/api/shopping-lists/latest', allow('shopping'), (req, res) => {
   const latest = db.prepare(`SELECT l.id FROM shopping_lists l
     ORDER BY CASE WHEN EXISTS (
       SELECT 1 FROM shopping_list_items i

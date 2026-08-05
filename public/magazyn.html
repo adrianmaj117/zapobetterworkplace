@@ -19,6 +19,7 @@
   <link rel="stylesheet" href="dark-mode.css">
   <link rel="stylesheet" href="delivery-workflow.css">
   <link rel="stylesheet" href="shopping-workflow.css">
+  <link rel="stylesheet" href="user-panel.css">
   <script src="dark-mode.js"></script>
   <style>
     .tile .path-edit,.tile .image-edit{opacity:0;pointer-events:none;transition:opacity .18s ease}
@@ -34,9 +35,10 @@
       <img class="header-logo" src="assets/daily-fruits-logo.png" alt="Daily Fruits by BetterWorkPlace">
       <strong class="brand-one-line">ZapoBetterWorkPlace</strong>
     </button>
-    <button type="button" id="selgrosCard" class="selgros-open" aria-haspopup="dialog">SELGROS</button>
-    <button type="button" id="purchases" class="small-btn purchases-open" aria-haspopup="dialog">Zakupy</button>
-    <div class="head-buttons">
+    <button type="button" id="userPanelOpen" class="user-panel-open" aria-haspopup="dialog"><span class="user-panel-avatar">☺</span><span><b>Panel użytkownika</b><small id="userPanelRole">Ładowanie…</small></span></button>
+    <button type="button" id="selgrosCard" class="selgros-open panel-proxy" aria-haspopup="dialog">SELGROS</button>
+    <button type="button" id="purchases" class="small-btn purchases-open panel-proxy" aria-haspopup="dialog">Zakupy</button>
+    <div class="head-buttons panel-proxy">
       <button id="deliveryHistory" class="small-btn" type="button">Historia dostaw</button>
       <button id="users" class="small-btn users-open" type="button" hidden>Użytkownicy</button>
       <button id="showInventory" class="small-btn">▦ Pokaż stany</button>
@@ -611,6 +613,24 @@
       <div class="form-actions"><button type="button" id="deleteUser" class="button ghost danger-btn" hidden>Usuń konto</button><button class="button primary" type="submit">Zapisz użytkownika</button></div>
     </form>
   </dialog>
+  <dialog id="userPanelDialog" class="user-panel-dialog">
+    <div class="modal-head"><div><p class="eyebrow">TWOJE KONTO</p><h2 id="panelUserName">Panel użytkownika</h2><p id="panelUserRole" class="user-panel-role"></p></div><button type="button" id="closeUserPanel" class="icon-btn">×</button></div>
+    <div class="user-panel-grid">
+      <button data-panel-action="purchases" data-cap="purchases"><img src="assets/panel/shopping.png" alt=""><b>Zakupy</b><small>Faktury i środki</small></button>
+      <button data-panel-action="users" data-cap="users"><img src="assets/panel/users.png" alt=""><b>Użytkownicy</b><small>Konta i role</small></button>
+      <button data-panel-action="demandHistory"><img src="assets/panel/history.png" alt=""><b>Historia dnia</b><small>Zapotrzebowania</small></button>
+      <button data-panel-action="showInventory"><img src="assets/panel/inventory.png" alt=""><b>Pokaż stany</b><small>Pełny przegląd</small></button>
+      <button data-panel-action="delivery" data-cap="delivery"><img src="assets/panel/delivery.png" alt=""><b>Dostawa</b><small>Grupowe przyjęcie</small></button>
+      <button data-panel-action="deliveryHistory" data-cap="deliveryHistory"><img src="assets/panel/delivery-history.png" alt=""><b>Historia dostaw</b><small>Co przyjechało</small></button>
+      <button data-panel-action="shoppingList" data-cap="shopping"><img src="assets/panel/shopping.png" alt=""><b>Lista zakupów</b><small>Brakujące artykuły</small></button>
+      <button data-panel-action="selgrosCard" data-cap="selgros"><img src="assets/panel/download.png" alt=""><b>SELGROS</b><small>Karta zakupowa</small></button>
+      <button data-panel-action="download"><img src="assets/panel/download.png" alt=""><b>Pobierz stany</b><small>Plik do pobrania</small></button>
+      <button data-panel-action="wallet" data-cap="finance"><img src="assets/panel/wallet.png" alt=""><b>Rozliczenie</b><small>Portfele zespołu</small></button>
+      <button data-panel-action="logout"><img src="assets/panel/logout.png" alt=""><b>Wyloguj</b><small>Zakończ pracę</small></button>
+    </div>
+  </dialog>
+  <dialog id="walletDialog" class="wallet-dialog"><div class="modal-head"><div><p class="eyebrow">ROZLICZENIE</p><h2>Portfele zespołu</h2></div><button type="button" id="closeWallet" class="icon-btn">×</button></div><p class="users-help">Załóż portfel, a następnie wyślij kwotę. Właściciel zawsze zatwierdza ją własnym hasłem.</p><div id="walletUsers" class="wallet-users"></div></dialog>
+  <dialog id="walletConfirmDialog" class="wallet-confirm-dialog"><div class="modal-head"><div><p class="eyebrow">PORTFEL</p><h2>Oczekuje na potwierdzenie</h2></div><button type="button" id="closeWalletConfirm" class="icon-btn">×</button></div><div id="walletPending"></div></dialog>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js" defer></script>
   <script src="demand.js" defer></script>
   <script src="history.js" defer></script>
@@ -622,5 +642,6 @@
   <script src="fruit-category.js" defer></script>
   <script src="users.js" defer></script>
   <script src="delivery.js" defer></script>
+  <script src="user-panel.js" defer></script>
 </body>
 </html>
