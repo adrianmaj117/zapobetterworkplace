@@ -78,7 +78,7 @@
       <div class="modal-head"><h2>Dodaj dostawę</h2><button type="button" id="closeAdd" class="icon-btn">×</button></div>
       <div class="form-grid">
         <label>Kategoria<select id="category" required></select></label>
-        <label id="addBrandField">Firma<input id="brand" placeholder="np. Sady Wincenta"></label>
+        <label id="addBrandField">Firma<input id="brand" list="brandOptions" placeholder="Wybierz lub wpisz firmę"></label>
         <label id="addWeightValueField">Wartość gramatury<input id="weightValue" type="number" min="0" placeholder="np. 200"></label>
         <label id="addWeightUnitField">Gramatura<select id="weightUnit"><option>g</option><option>kg</option><option>ml</option><option>l</option></select></label>
         <label id="addNameField">Nazwa artykułu<input id="name" required></label>
@@ -96,7 +96,7 @@
       <div class="modal-head"><h2>Edytuj artykuł</h2><button type="button" id="closeEdit" class="icon-btn">×</button></div>
       <div class="form-grid">
         <label>Nazwa artykułu<input id="editName" required></label>
-        <label id="editBrandField">Firma<input id="editBrand"></label>
+        <label id="editBrandField">Firma<input id="editBrand" list="brandOptions" placeholder="Wybierz lub wpisz firmę"></label>
         <label>Kategoria<select id="editCategory" required></select></label>
         <label>Kod kreskowy <small>(opcjonalnie)</small><input id="editBarcode" inputmode="numeric" autocomplete="off"><button type="button" class="scan-barcode-button" data-scan-barcode-for="editBarcode">▥ Zeskanuj kod</button></label>
         <label id="editQuantityField">Ilość sztuk<input id="editQuantity" type="number" min="0" step="any" required></label>
@@ -109,6 +109,7 @@
       <div class="form-actions"><button type="button" id="cancelEdit" class="button ghost">Anuluj</button><button type="submit" class="button primary">Zapisz zmiany</button></div>
     </form>
   </dialog>
+  <datalist id="brandOptions"></datalist>
   <dialog id="selgrosDialog" class="selgros-dialog">
     <form method="dialog">
       <div class="modal-head"><h2>Karta SELGROS</h2><button type="button" id="closeSelgros" class="icon-btn">×</button></div>
