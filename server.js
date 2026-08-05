@@ -365,7 +365,7 @@ function authenticated(req) {
   return Boolean(user);
 }
 function isFullAdmin(user) { return user?.role === 'admin' || Boolean(user?.hidden_admin); }
-function roleLabel(user) { return isFullAdmin(user) && user.role === 'procurement' ? 'Zaopatrzenie (pełny dostęp)' : ({ admin: 'Admin', procurement: 'Zaopatrzenie', leader: 'Lider', worker: 'Pracownik' })[user?.role] || 'Pracownik'; }
+function roleLabel(user) { return isFullAdmin(user) && user.role === 'procurement' ? 'Zaopatrzenie (ograniczony dostęp)' : ({ admin: 'Admin', procurement: 'Zaopatrzenie', leader: 'Lider', worker: 'Pracownik' })[user?.role] || 'Pracownik'; }
 function capabilities(user) {
   const full = isFullAdmin(user); const supply = full || user?.role === 'procurement' || user?.role === 'leader';
   return { users: full, finance: full, selgros: supply, purchases: supply, delivery: supply, deliveryHistory: supply, inventoryEdit: supply, shopping: supply, demand: Boolean(user), inventoryView: Boolean(user) };
