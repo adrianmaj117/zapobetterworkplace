@@ -32,7 +32,7 @@
     document.querySelector('#add').hidden = !caps.inventoryEdit;
   }
   async function walletNotifications(showExisting = false) {
-    const data = await api('/api/wallet/me');
+    const data = await api('/api/wallet/me', { headers: { 'x-background-refresh':'1' } });
     const pending = data.transactions.filter(item => item.status === 'pending');
     const pendingIds = new Set(pending.map(item => String(item.id)));
     const newOperations = pending.filter(item => !knownPendingWalletOperations.has(String(item.id)));
@@ -73,5 +73,6 @@
     try { await api(`/api/wallet/transactions/${button.dataset.walletDecide}/decide`, { method:'POST', body:JSON.stringify({ accept: button.dataset.accept === 'true', password }) }); walletConfirm.close(); await walletNotifications(false); } catch (error) { alert(error.message); }
   });
   document.addEventListener('visibilitychange', () => { clearTimeout(walletTimer); if (document.hidden) walletTimer = setTimeout(scheduleWalletNotifications, 30000); else scheduleWalletNotifications(); });
+  document.addEventListener('wallet:open-pending', () => { walletNotifications(true).catch(() => {}); });
   api('/api/session').then(data => { session = data; applyPermissions(); return walletNotifications(true); }).then(scheduleWalletNotifications).catch(() => {});
 })();

@@ -426,7 +426,7 @@ app.use('/api', (req, res, next) => {
 app.get('/api/session', (req, res) => res.json({ user: req.user, capabilities: capabilities(req.user) }));
 app.get('/api/notifications', (req, res) => {
   syncSystemNotifications();
-  const notifications = db.prepare(`SELECT n.id,n.type,n.title,n.message,n.created_at,CASE WHEN r.notification_id IS NULL THEN 0 ELSE 1 END AS is_read FROM notifications n LEFT JOIN notification_reads r ON r.notification_id=n.id AND r.user_id=? ORDER BY n.id DESC LIMIT 40`).all(req.user.id);
+  const notifications = db.prepare(`SELECT n.id,n.type,n.title,n.message,n.entity_key,n.created_at,CASE WHEN r.notification_id IS NULL THEN 0 ELSE 1 END AS is_read FROM notifications n LEFT JOIN notification_reads r ON r.notification_id=n.id AND r.user_id=? ORDER BY n.id DESC LIMIT 40`).all(req.user.id);
   res.json({ unread_count: notifications.filter(item => !item.is_read).length, notifications });
 });
 app.post('/api/notifications/:id/read', (req, res) => { db.prepare('INSERT OR IGNORE INTO notification_reads (notification_id,user_id) VALUES (?,?)').run(Number(req.params.id), req.user.id); res.status(204).end(); });
