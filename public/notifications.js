@@ -1,5 +1,5 @@
 (() => {
-  const button=document.querySelector('#notificationsOpen'),badge=document.querySelector('#notificationCount'),panel=document.querySelector('#notificationsPanel'),list=document.querySelector('#notificationsList'),allRead=document.querySelector('#notificationsReadAll'),toasts=document.querySelector('#notificationToasts');if(!button)return;
+  const button=document.querySelector('#notificationsOpen'),badge=document.querySelector('#notificationCount'),panel=document.querySelector('#notificationsPanel'),list=document.querySelector('#notificationsList'),allRead=document.querySelector('#notificationsReadAll'),toasts=document.querySelector('#notificationToasts'),wrap=document.querySelector('.notifications-wrap'),topbar=document.querySelector('.warehouse-topbar');if(!button)return;
   const token=localStorage.getItem('zapoToken')||'',seenKey='zapo.notification.seen';let first=true,timer,seen=new Set();try{seen=new Set(JSON.parse(localStorage.getItem(seenKey)||'[]'))}catch(_){ }
   const esc=x=>String(x||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
   const api=async(path,options={})=>{const r=await fetch(path,{...options,headers:{'Content-Type':'application/json','x-session-token':token}});if(!r.ok)throw Error();return r.status===204?null:r.json()};
@@ -7,8 +7,9 @@
   function addToast(n){const e=document.createElement('article');e.className='notification-toast';e.innerHTML=`<b>${esc(n.title)}</b><span>${esc(n.message)}</span>`;toasts.append(e);setTimeout(()=>e.remove(),5000)}
   function render(data){badge.hidden=!data.unread_count;badge.textContent=data.unread_count>99?'99+':data.unread_count;const unread=data.notifications.filter(n=>!n.is_read);list.innerHTML=data.notifications.length?data.notifications.map(n=>`<article class="notification-item ${n.is_read?'is-read':''}"><div><b>${esc(n.title)}</b><span>${esc(n.message)}</span></div>${n.is_read?'':`<button data-read="${n.id}">Oznacz jako przeczytane</button>`}</article>`).join(''):'<p class="notifications-empty">Brak powiadomień.</p>';if(!first)unread.filter(n=>!seen.has(n.id)).forEach(addToast);unread.forEach(n=>seen.add(n.id));save();first=false}
   async function refresh(){try{render(await api('/api/notifications'))}catch(_){}clearTimeout(timer);timer=setTimeout(refresh,document.hidden?60000:15000)}
-  button.onclick=()=>{panel.hidden=!panel.hidden;button.setAttribute('aria-expanded',String(!panel.hidden));if(!panel.hidden)refresh()};
+  const closePanel=()=>{panel.hidden=true;wrap?.classList.remove('is-open');topbar?.classList.remove('notifications-expanded');button.setAttribute('aria-expanded','false')};
+  button.onclick=()=>{panel.hidden=!panel.hidden;wrap?.classList.toggle('is-open',!panel.hidden);topbar?.classList.toggle('notifications-expanded',!panel.hidden);button.setAttribute('aria-expanded',String(!panel.hidden));if(!panel.hidden)refresh()};
   allRead.onclick=async()=>{await api('/api/notifications/read-all',{method:'POST'});refresh()};
   list.onclick=async e=>{const b=e.target.closest('[data-read]');if(!b)return;await api(`/api/notifications/${b.dataset.read}/read`,{method:'POST'});refresh()};
-  document.addEventListener('click',e=>{if(!e.target.closest('.notifications-wrap'))panel.hidden=true});document.addEventListener('visibilitychange',()=>{clearTimeout(timer);if(document.hidden)timer=setTimeout(refresh,60000);else refresh()});refresh();
+  document.addEventListener('click',e=>{if(!e.target.closest('.notifications-wrap'))closePanel()});document.addEventListener('visibilitychange',()=>{clearTimeout(timer);if(document.hidden)timer=setTimeout(refresh,60000);else refresh()});refresh();
 })();

@@ -1,0 +1,5 @@
+@media(max-width:700px){
+  .warehouse-topbar.notifications-expanded{flex-wrap:wrap}
+  .notifications-wrap.is-open{order:7;flex:0 0 100%;position:static;text-align:right}
+  .notifications-wrap.is-open .notifications-panel{position:static;display:block;width:100%;max-height:min(52vh,420px);margin-top:8px;text-align:left}
+}
