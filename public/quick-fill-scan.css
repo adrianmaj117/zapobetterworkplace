@@ -1,0 +1,4 @@
+.quick-fill-barcode{display:flex;gap:5px}
+.quick-fill-barcode input{width:100%}
+.quick-fill-barcode .small-btn{padding:7px 8px;white-space:nowrap}
+html[data-theme="dark"] .quick-fill-barcode .small-btn{border-color:#557463;background:#203c2a;color:#f2f8f3}

@@ -34,7 +34,9 @@
   function row(product) {
     const wants = selected();
     const badges = missingBadges(product).map(badge => `<span>${badge}</span>`).join('');
-    return `<form class="quick-fill-row" data-id="${product.id}"><div class="quick-fill-product"><b>${esc(product.name)}</b><small>${esc(product.brand || 'Pozostałe')} · ${product.weight_value ? `${product.weight_value} ${esc(product.weight_unit)}` : 'bez gramatury'}</small><div class="quick-fill-badges">${badges}</div></div><div class="quick-fill-fields">${wants.expiry && !product.expiration_date ? '<label>Termin<input name="expiry" type="date" required></label>' : ''}${wants.barcode && !product.barcode ? '<label>Kod<input name="barcode" inputmode="numeric" autocomplete="off" placeholder="Zeskanuj lub wpisz"></label>' : ''}${wants.photo && !product.has_image ? '<label>Zdjęcie<input name="photo" type="file" accept="image/*"></label>' : ''}</div><button type="submit" class="small-btn main">Zapisz</button></form>`;
+    const barcodeField = wants.barcode && !product.barcode
+      ? `<label>Kod<div class="quick-fill-barcode"><input id="quickBarcode-${product.id}" name="barcode" inputmode="numeric" autocomplete="off" placeholder="Zeskanuj lub wpisz"><button type="button" class="small-btn" data-scan-barcode-for="quickBarcode-${product.id}">▥ Skanuj</button></div></label>` : '';
+    return `<form class="quick-fill-row" data-id="${product.id}"><div class="quick-fill-product"><b>${esc(product.name)}</b><small>${esc(product.brand || 'Pozostałe')} · ${product.weight_value ? `${product.weight_value} ${esc(product.weight_unit)}` : 'bez gramatury'}</small><div class="quick-fill-badges">${badges}</div></div><div class="quick-fill-fields">${wants.expiry && !product.expiration_date ? '<label>Termin<input name="expiry" type="date" required></label>' : ''}${barcodeField}${wants.photo && !product.has_image ? '<label>Zdjęcie<input name="photo" type="file" accept="image/*"></label>' : ''}</div><button type="submit" class="small-btn main">Zapisz</button></form>`;
   }
   async function save(event) {
     const form = event.target.closest('.quick-fill-row');
