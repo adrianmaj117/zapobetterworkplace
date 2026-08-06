@@ -31,6 +31,7 @@
   <link rel="stylesheet" href="quick-fill.css?v=1">
   <link rel="stylesheet" href="quick-fill-scan.css?v=1">
   <link rel="stylesheet" href="quick-fill-approve.css?v=1">
+  <link rel="stylesheet" href="inventory-export.css?v=1">
   <link rel="stylesheet" href="notifications.css?v=1">
   <link rel="stylesheet" href="notifications-mobile-layout.css?v=1">
   <script src="dark-mode.js"></script>
@@ -87,6 +88,13 @@
       <button id="logout" class="small-btn">Wyloguj</button>
     </div>
   </header>
+  <dialog id="inventoryExportDialog" class="inventory-export-dialog">
+    <div class="modal-head"><div><p class="eyebrow">STANY MAGAZYNOWE</p><h2>Przygotuj wydruk</h2></div><button type="button" id="closeInventoryExport" class="icon-btn">×</button></div>
+    <p class="inventory-export-help">Wybierz kolejność produktów. Ten sam układ będzie widoczny w podglądzie wydruku oraz w pobranym pliku.</p>
+    <label class="inventory-export-select">Ułóż stany według<select id="inventoryExportSort"><option value="category">Kategorii</option><option value="expiry">Terminów ważności</option><option value="alphabetical">Alfabetycznie</option></select></label>
+    <div id="inventoryExportPreview" class="inventory-export-preview"></div>
+    <div class="form-actions"><button type="button" id="downloadInventoryCsv" class="button ghost">Pobierz CSV</button><button type="button" id="printInventory" class="button primary">Podgląd / drukuj</button></div>
+  </dialog>
   <main>
     <section class="warehouse-head">
       <p class="eyebrow">STANY MAGAZYNOWE</p>
