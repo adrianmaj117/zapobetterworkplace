@@ -10,6 +10,8 @@
   const walletDialog = document.querySelector('#walletDialog');
   const walletConfirm = document.querySelector('#walletConfirmDialog');
   let session;
+  let walletTimer;
+  let knownPendingWalletOperations = new Set();
   const show = element => { dialog.close(); element?.click(); };
   const roleText = user => user.role_label || ({ admin:'Admin', procurement:'Zaopatrzenie', leader:'Lider', worker:'Pracownik' }[user.role] || 'Pracownik');
   const roleSelect = document.querySelector('#userRole');
@@ -29,12 +31,20 @@
     document.querySelector('#shoppingList').hidden = !caps.shopping;
     document.querySelector('#add').hidden = !caps.inventoryEdit;
   }
-  async function walletNotifications() {
+  async function walletNotifications(showExisting = false) {
     const data = await api('/api/wallet/me');
     const pending = data.transactions.filter(item => item.status === 'pending');
+    const pendingIds = new Set(pending.map(item => String(item.id)));
+    const newOperations = pending.filter(item => !knownPendingWalletOperations.has(String(item.id)));
+    knownPendingWalletOperations = pendingIds;
     if (!pending.length) return;
     document.querySelector('#walletPending').innerHTML = pending.map(item => `<article class="wallet-pending"><b>${item.kind === 'create' ? 'Utworzono portfel' : `Zmiana środków: ${Number(item.amount).toLocaleString('pl-PL',{style:'currency',currency:'PLN'})}`}</b><small>${item.note || 'Potwierdź operację własnym hasłem.'}</small><label>Twoje hasło<input type="password" data-wallet-password="${item.id}"></label><div><button class="button ghost" data-wallet-decide="${item.id}" data-accept="false">Odrzuć</button><button class="button primary" data-wallet-decide="${item.id}" data-accept="true">Akceptuję</button></div></article>`).join('');
-    walletConfirm.showModal();
+    if ((showExisting || newOperations.length) && !walletConfirm.open) walletConfirm.showModal();
+  }
+  function scheduleWalletNotifications() {
+    walletNotifications(false).catch(() => {});
+    clearTimeout(walletTimer);
+    walletTimer = setTimeout(scheduleWalletNotifications, document.hidden ? 30000 : 1000);
   }
   async function renderWallets() {
     const data = await api('/api/wallet/users');
@@ -60,7 +70,8 @@
   walletConfirm.addEventListener('click', async event => {
     const button = event.target.closest('[data-wallet-decide]'); if (!button) return;
     const password = walletConfirm.querySelector(`[data-wallet-password="${button.dataset.walletDecide}"]`)?.value;
-    try { await api(`/api/wallet/transactions/${button.dataset.walletDecide}/decide`, { method:'POST', body:JSON.stringify({ accept: button.dataset.accept === 'true', password }) }); walletConfirm.close(); await walletNotifications(); } catch (error) { alert(error.message); }
+    try { await api(`/api/wallet/transactions/${button.dataset.walletDecide}/decide`, { method:'POST', body:JSON.stringify({ accept: button.dataset.accept === 'true', password }) }); walletConfirm.close(); await walletNotifications(false); } catch (error) { alert(error.message); }
   });
-  api('/api/session').then(data => { session = data; applyPermissions(); return walletNotifications(); }).catch(() => {});
+  document.addEventListener('visibilitychange', () => { clearTimeout(walletTimer); if (document.hidden) walletTimer = setTimeout(scheduleWalletNotifications, 30000); else scheduleWalletNotifications(); });
+  api('/api/session').then(data => { session = data; applyPermissions(); return walletNotifications(true); }).then(scheduleWalletNotifications).catch(() => {});
 })();

@@ -391,6 +391,13 @@ function syncSystemNotifications() {
   }
   for (const item of db.prepare('SELECT id,name,quantity,unit FROM products WHERE min_quantity>0 AND quantity<=min_quantity').all()) add.run('stock', 'Niski stan magazynowy', `${item.name} — pozostało: ${item.quantity} ${item.unit}`, `stock:${item.id}:${item.quantity}`);
 }
+function addNotification(type, title, message, entityKey) {
+  db.prepare('INSERT OR IGNORE INTO notifications (type, title, message, entity_key) VALUES (?, ?, ?, ?)')
+    .run(type, title, message, entityKey);
+}
+function moneyLabel(value) {
+  return Number(value || 0).toLocaleString('pl-PL', { style: 'currency', currency: 'PLN' });
+}
 function allow(capability) { return (req, res, next) => capabilities(req.user)[capability] ? next() : res.status(403).json({ error: 'To konto nie ma dostępu do tej funkcji.' }); }
 function adminOnly(req, res, next) {
   return isFullAdmin(req.user)
@@ -542,15 +549,18 @@ app.post('/api/wallet/users/:userId', adminOnly, (req, res) => {
   if (!user) return res.status(404).json({ error: 'Nie znaleziono użytkownika.' });
   if (walletFor(userId)) return res.status(409).json({ error: 'Ten użytkownik ma już portfel.' });
   const result = db.prepare('INSERT INTO wallets (user_id, balance, active) VALUES (?, 0, 0)').run(userId);
-  db.prepare("INSERT INTO wallet_transactions (wallet_id, amount, kind, note, status, initiated_by_user_id) VALUES (?, 0, 'create', 'Utworzono portfel', 'pending', ?)").run(result.lastInsertRowid, req.user.id);
+  const transaction = db.prepare("INSERT INTO wallet_transactions (wallet_id, amount, kind, note, status, initiated_by_user_id) VALUES (?, 0, 'create', 'Utworzono portfel', 'pending', ?)").run(result.lastInsertRowid, req.user.id);
+  addNotification('wallet', 'Nowy portfel czeka na akceptację', `${req.user.display_name} utworzył(a) portfel dla: ${user.display_name}.`, `wallet:pending:${transaction.lastInsertRowid}`);
   res.status(201).json(walletData(userId));
 });
 app.post('/api/wallet/users/:userId/transactions', adminOnly, (req, res) => {
-  const wallet = walletFor(Number(req.params.userId)); const amount = Number(req.body?.amount);
+  const userId = Number(req.params.userId); const wallet = walletFor(userId); const amount = Number(req.body?.amount);
   if (!wallet) return res.status(404).json({ error: 'Najpierw załóż portfel temu użytkownikowi.' });
   if (!Number.isFinite(amount) || amount === 0) return res.status(400).json({ error: 'Wpisz kwotę większą lub mniejszą od zera.' });
-  db.prepare("INSERT INTO wallet_transactions (wallet_id, amount, kind, note, status, initiated_by_user_id) VALUES (?, ?, 'adjustment', ?, 'pending', ?)")
+  const transaction = db.prepare("INSERT INTO wallet_transactions (wallet_id, amount, kind, note, status, initiated_by_user_id) VALUES (?, ?, 'adjustment', ?, 'pending', ?)")
     .run(wallet.id, amount, String(req.body?.note || '').trim().slice(0, 300), req.user.id);
+  const recipient = db.prepare('SELECT display_name FROM users WHERE id=?').get(userId);
+  addNotification('wallet', 'Środki czekają na akceptację', `${req.user.display_name} wysłał(a) ${moneyLabel(amount)} do portfela: ${recipient?.display_name || 'użytkownik'}.`, `wallet:pending:${transaction.lastInsertRowid}`);
   res.status(201).json(walletData(wallet.user_id));
 });
 app.post('/api/wallet/transactions/:id/decide', (req, res) => {
@@ -564,6 +574,7 @@ app.post('/api/wallet/transactions/:id/decide', (req, res) => {
     if (transaction.kind === 'create') db.prepare('UPDATE wallets SET active=1, updated_at=CURRENT_TIMESTAMP WHERE id=?').run(transaction.wallet_id);
     else db.prepare('UPDATE wallets SET balance=balance+?, updated_at=CURRENT_TIMESTAMP WHERE id=?').run(transaction.amount, transaction.wallet_id);
   }
+  addNotification('wallet', accepted ? 'Środki zostały zaakceptowane' : 'Środki zostały odrzucone', `${req.user.display_name} ${accepted ? 'zaakceptował(a)' : 'odrzucił(a)'} operację ${transaction.kind === 'create' ? 'utworzenia portfela' : `na kwotę ${moneyLabel(transaction.amount)}`}.`, `wallet:decision:${transaction.id}:${accepted ? 'accepted' : 'rejected'}`);
   res.json(walletData(req.user.id));
 });
 
