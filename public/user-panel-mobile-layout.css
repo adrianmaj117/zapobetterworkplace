@@ -1,0 +1,12 @@
+@media(max-width:700px){
+  .warehouse-topbar{flex-wrap:nowrap;gap:5px;padding:8px 10px}
+  .warehouse-brand{order:1;margin-right:auto;min-width:42px}
+  .warehouse-brand .brand-one-line{display:none}
+  .theme-toggle-visible{order:2;margin-left:0}
+  .youtube-show{order:3}
+  .quick-fill-open{order:4}
+  .user-panel-open{order:5;padding:6px;border-radius:11px;gap:0}
+  .user-panel-open span:last-child{display:none}
+  .user-panel-avatar{width:30px;height:30px}
+  .notifications-wrap{order:6}
+}
