@@ -12,6 +12,10 @@
   const topbar = document.querySelector('.warehouse-topbar');
   const themeToggle = document.querySelector('#themeToggle');
   let mobileOpen = false;
+  let videos = [];
+  let currentIndex = -1;
+  let ytPlayer = null;
+  let ytReady = null;
   if (!panel || !form) return;
 
   const esc = value => String(value || '').replace(/[&<>"']/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#039;' })[char]);
@@ -21,6 +25,39 @@
     if (!response.ok) throw new Error(data.error || 'Nie udało się połączyć z YouTube.');
     return data;
   };
+  const ensureYouTubePlayer = () => {
+    if (window.YT?.Player) return Promise.resolve();
+    if (ytReady) return ytReady;
+    ytReady = new Promise(resolve => {
+      const previous = window.onYouTubeIframeAPIReady;
+      window.onYouTubeIframeAPIReady = () => { if (typeof previous === 'function') previous(); resolve(); };
+      const script = document.createElement('script');
+      script.src = 'https://www.youtube.com/iframe_api';
+      script.async = true;
+      document.head.append(script);
+    });
+    return ytReady;
+  };
+  async function playVideo(index) {
+    if (!videos.length) return;
+    currentIndex = (index + videos.length) % videos.length;
+    const video = videos[currentIndex];
+    player.hidden = false;
+    player.innerHTML = '<div id="youtubePlayerFrame"></div>';
+    info.textContent = `Odtwarzanie: ${video.title}`;
+    await ensureYouTubePlayer();
+    ytPlayer?.destroy?.();
+    ytPlayer = new window.YT.Player('youtubePlayerFrame', {
+      host: 'https://www.youtube-nocookie.com',
+      videoId: video.id,
+      playerVars: { autoplay: 1, rel: 0 },
+      events: {
+        onStateChange(event) {
+          if (event.data === window.YT.PlayerState.ENDED) playVideo(currentIndex + 1);
+        }
+      }
+    });
+  }
   const setDesktopHidden = hidden => {
     panel.hidden = hidden;
     show.hidden = !hidden;
@@ -54,7 +91,7 @@
     info.textContent = 'Szukam filmów…';
     results.innerHTML = '';
     try {
-      const videos = await api(`/api/youtube/search?q=${encodeURIComponent(text)}`);
+      videos = await api(`/api/youtube/search?q=${encodeURIComponent(text)}`);
       info.textContent = videos.length ? `Wyniki dla: ${text}` : 'Nie znaleziono filmów.';
       results.innerHTML = videos.map(video => `<button type="button" class="youtube-result" data-video="${esc(video.id)}" data-title="${esc(video.title)}"><img src="${esc(video.thumbnail)}" alt=""><span><b>${esc(video.title)}</b><small>${esc(video.channel)}</small></span></button>`).join('');
     } catch (error) {
@@ -64,9 +101,7 @@
   results.addEventListener('click', event => {
     const item = event.target.closest('[data-video]');
     if (!item) return;
-    const videoId = item.dataset.video;
-    player.hidden = false;
-    player.innerHTML = `<iframe src="https://www.youtube-nocookie.com/embed/${encodeURIComponent(videoId)}?autoplay=1" title="${esc(item.dataset.title)}" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>`;
-    info.textContent = item.dataset.title;
+    const index = videos.findIndex(video => video.id === item.dataset.video);
+    playVideo(index);
   });
 })();
