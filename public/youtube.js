@@ -11,6 +11,8 @@
   const controls = document.querySelector('#youtubeControls');
   const previous = document.querySelector('#youtubePrevious');
   const next = document.querySelector('#youtubeNext');
+  const playlist = document.querySelector('#youtubePlaylist');
+  const playlistItems = document.querySelector('#youtubePlaylistItems');
   const compactScreen = window.matchMedia('(max-width: 700px)');
   const topbar = document.querySelector('.warehouse-topbar');
   const themeToggle = document.querySelector('#themeToggle');
@@ -22,6 +24,8 @@
   let ytPlayer = null;
   let ytReady = null;
   let nextBusy = false;
+  let queue = [];
+  let queueIndex = -1;
   if (!panel || !form) return;
 
   const esc = value => String(value || '').replace(/[&<>"']/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#039;' })[char]);
@@ -33,9 +37,13 @@
   };
   const updateControls = () => {
     controls.hidden = !currentVideo;
-    previous.disabled = historyIndex <= 0;
+    previous.disabled = queueIndex <= 0;
     next.disabled = !currentVideo || nextBusy;
   };
+  function renderPlaylist() {
+    playlist.hidden = !queue.length;
+    playlistItems.innerHTML = queue.map((video, index) => `<button type="button" class="youtube-queue-item ${index === queueIndex ? 'is-playing' : ''}" data-queue-index="${index}"><img src="${esc(video.thumbnail)}" alt=""><span><b>${esc(video.title)}</b><small>${esc(video.channel)}</small></span></button>`).join('');
+  }
   const ensureYouTubePlayer = () => {
     if (window.YT?.Player) return Promise.resolve();
     if (ytReady) return ytReady;
@@ -55,13 +63,15 @@
     history.push(video);
     historyIndex = history.length - 1;
   }
-  async function startVideo(video, saveHistory = true) {
+  async function startVideo(video, saveHistory = true, index = queueIndex) {
     if (!video?.id) return;
     currentVideo = video;
+    queueIndex = index;
     if (saveHistory) saveInHistory(video);
     player.hidden = false;
     player.innerHTML = '<div id="youtubePlayerFrame"></div>';
     info.textContent = `Odtwarzanie: ${video.title}`;
+    renderPlaylist();
     updateControls();
     await ensureYouTubePlayer();
     ytPlayer?.destroy?.();
@@ -69,20 +79,24 @@
       host: 'https://www.youtube-nocookie.com',
       videoId: video.id,
       playerVars: { autoplay: 1, rel: 0 },
-      events: { onStateChange(event) { if (event.data === window.YT.PlayerState.ENDED) void playSimilar(); } }
+      events: { onStateChange(event) { if (event.data === window.YT.PlayerState.ENDED) void playNextInQueue(); } }
     });
   }
-  async function playSimilar() {
+  async function playNextInQueue() {
     if (!currentVideo || nextBusy) return;
+    const nextInQueue = queue[queueIndex + 1];
+    if (nextInQueue) { await startVideo(nextInQueue, true, queueIndex + 1); return; }
     nextBusy = true;
     updateControls();
-    info.textContent = 'Szukam nowej, podobnej piosenki…';
+    info.textContent = 'Uzupełniam kolejkę podobnymi piosenkami…';
     try {
       const related = await api(`/api/youtube/related?id=${encodeURIComponent(currentVideo.id)}`);
-      const played = new Set(history.map(video => video.id));
-      const candidate = related.find(video => !played.has(video.id)) || related.find(video => video.id !== currentVideo.id);
+      const known = new Set(queue.map(video => video.id));
+      queue.push(...related.filter(video => !known.has(video.id) && video.id !== currentVideo.id));
+      renderPlaylist();
+      const candidate = queue[queueIndex + 1];
       if (!candidate) throw new Error('Nie znalazłem kolejnej podobnej piosenki.');
-      await startVideo(candidate, true);
+      await startVideo(candidate, true, queueIndex + 1);
     } catch (error) {
       info.textContent = error.message || 'Nie udało się znaleźć następnej piosenki.';
     } finally {
@@ -116,11 +130,10 @@
     else setDesktopHidden(false);
   });
   previous.addEventListener('click', () => {
-    if (historyIndex <= 0) return;
-    historyIndex -= 1;
-    void startVideo(history[historyIndex], false);
+    if (queueIndex <= 0) return;
+    void startVideo(queue[queueIndex - 1], false, queueIndex - 1);
   });
-  next.addEventListener('click', () => { void playSimilar(); });
+  next.addEventListener('click', () => { void playNextInQueue(); });
   form.addEventListener('submit', async event => {
     event.preventDefault();
     const text = query.value.trim();
@@ -137,6 +150,13 @@
     const item = event.target.closest('[data-video]');
     if (!item) return;
     const video = videos.find(entry => entry.id === item.dataset.video);
-    void startVideo(video, true);
+    queue = [...videos];
+    void startVideo(video, true, queue.findIndex(item => item.id === video.id));
+  });
+  playlistItems.addEventListener('click', event => {
+    const item = event.target.closest('[data-queue-index]');
+    if (!item) return;
+    const index = Number(item.dataset.queueIndex);
+    if (queue[index]) void startVideo(queue[index], true, index);
   });
 })();
