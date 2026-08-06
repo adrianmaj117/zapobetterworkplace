@@ -870,6 +870,10 @@ app.get('/api/products', (req, res) => {
   `).all({ search: `%${search.trim()}%`, category });
   res.json(rows);
 });
+app.get('/api/products/expired', (req, res) => {
+  const today = new Date().toISOString().slice(0, 10);
+  res.json(db.prepare(`SELECT id, name, category, brand, unit, quantity, expiration_date FROM products WHERE quantity>0 AND expiration_date IS NOT NULL AND expiration_date<? ORDER BY expiration_date ASC, name COLLATE NOCASE ASC`).all(today));
+});
 
 function deliveryById(id) {
   const delivery = db.prepare('SELECT * FROM deliveries WHERE id=?').get(id);
@@ -1447,6 +1451,23 @@ app.delete('/api/products/:id', (req, res) => {
   db.prepare('DELETE FROM movements WHERE product_id = ?').run(id);
   db.prepare('DELETE FROM products WHERE id = ?').run(id);
   res.status(204).end();
+});
+
+app.post('/api/products/:id/remove-expired', (req, res) => {
+  const id = Number(req.params.id), product = productById(id), today = new Date().toISOString().slice(0, 10);
+  if (!product) return res.status(404).json({ error: 'Nie znaleziono produktu.' });
+  const batches = db.prepare('SELECT id,quantity FROM product_batches WHERE product_id=? AND quantity>0 AND expiration_date IS NOT NULL AND expiration_date<?').all(id, today);
+  const removed = batches.reduce((total, batch) => total + Number(batch.quantity || 0), 0) || (product.expiration_date && product.expiration_date < today ? Number(product.quantity) : 0);
+  if (!removed) return res.status(400).json({ error: 'Ten produkt nie ma już partii po terminie.' });
+  db.exec('BEGIN');
+  try {
+    if (batches.length) db.prepare('UPDATE product_batches SET quantity=0 WHERE product_id=? AND quantity>0 AND expiration_date IS NOT NULL AND expiration_date<?').run(id, today);
+    const remaining = Math.max(0, Number(product.quantity) - removed);
+    if (remaining <= 0) { db.prepare('DELETE FROM movements WHERE product_id=?').run(id); db.prepare('DELETE FROM product_batches WHERE product_id=?').run(id); db.prepare('DELETE FROM products WHERE id=?').run(id); }
+    else { db.prepare('UPDATE products SET quantity=?,updated_at=CURRENT_TIMESTAMP WHERE id=?').run(remaining, id); syncProductExpiryFromBatches(id); db.prepare("INSERT INTO movements (product_id,type,quantity,note) VALUES (?, 'remove', ?, 'Usunięcie partii po terminie')").run(id, removed); }
+    db.prepare('DELETE FROM notifications WHERE entity_key LIKE ?').run(`expiry:${id}:%`);
+    db.exec('COMMIT'); res.json({ removed, deleted: remaining <= 0 });
+  } catch (error) { db.exec('ROLLBACK'); throw error; }
 });
 
 app.post('/api/products/bulk-delete', (req, res) => {

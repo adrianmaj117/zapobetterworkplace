@@ -32,6 +32,7 @@
   <link rel="stylesheet" href="quick-fill-scan.css?v=1">
   <link rel="stylesheet" href="quick-fill-approve.css?v=1">
   <link rel="stylesheet" href="inventory-export.css?v=1">
+  <link rel="stylesheet" href="topbar-panels.css?v=1">
   <link rel="stylesheet" href="notifications.css?v=1">
   <link rel="stylesheet" href="notifications-mobile-layout.css?v=1">
   <script src="dark-mode.js"></script>
@@ -72,6 +73,7 @@
       <img class="header-logo" src="assets/daily-fruits-logo.png" alt="Daily Fruits by BetterWorkPlace">
       <strong class="brand-one-line">ZapoBetterWorkPlace</strong>
     </button>
+    <div class="expired-wrap"><button type="button" id="expiredOpen" class="small-btn expired-open" aria-expanded="false" title="Produkty po terminie">❗ <span id="expiredCount" hidden>0</span></button><section id="expiredPanel" class="expired-panel" hidden><header><b>Produkty po terminie</b><button type="button" id="expiredClose" aria-label="Zamknij">×</button></header><p class="expired-help">Usuń tylko produkty lub partie, które faktycznie zostały zdjęte z magazynu.</p><div id="expiredList"></div></section></div>
     <button type="button" id="themeToggle" class="small-btn theme-toggle-visible" data-theme-auto-label title="Zmień tryb jasny / ciemny"></button>
     <button type="button" id="quickFillOpen" class="small-btn quick-fill-open" title="Szybkie uzupełnianie danych">⚡ Uzupełnij dane</button>
     <div class="notifications-wrap"><button type="button" id="notificationsOpen" class="small-btn notifications-open" aria-expanded="false" title="Powiadomienia">🔔 <span id="notificationCount" hidden>0</span></button><section id="notificationsPanel" class="notifications-panel" hidden><header><b>Powiadomienia</b><button type="button" id="notificationsReadAll">Oznacz jako przeczytane</button></header><div id="notificationsList" class="notifications-list"></div></section></div>
@@ -707,5 +709,6 @@
   <script src="youtube.js" defer></script>
   <script src="quick-fill.js" defer></script>
   <script src="notifications.js" defer></script>
+  <script src="expired-products.js" defer></script>
 </body>
 </html>
