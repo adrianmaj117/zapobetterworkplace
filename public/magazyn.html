@@ -25,6 +25,7 @@
   <link rel="stylesheet" href="dark-visibility.css?v=4">
   <link rel="stylesheet" href="dark-wallet-force.css?v=1">
   <link rel="stylesheet" href="youtube-panel.css?v=1">
+  <link rel="stylesheet" href="quick-fill.css?v=1">
   <script src="dark-mode.js"></script>
   <style>
     .tile .path-edit,.tile .image-edit{opacity:0;pointer-events:none;transition:opacity .18s ease}
@@ -61,6 +62,7 @@
       <strong class="brand-one-line">ZapoBetterWorkPlace</strong>
     </button>
     <button type="button" id="themeToggle" class="small-btn theme-toggle-visible" data-theme-auto-label title="Zmień tryb jasny / ciemny"></button>
+    <button type="button" id="quickFillOpen" class="small-btn quick-fill-open" title="Szybkie uzupełnianie danych">⚡ Uzupełnij dane</button>
     <button type="button" id="userPanelOpen" class="user-panel-open" aria-haspopup="dialog"><span class="user-panel-avatar">☺</span><span><b>Panel użytkownika</b><small id="userPanelRole">Ładowanie…</small></span></button>
     <button type="button" id="selgrosCard" class="selgros-open panel-proxy" aria-haspopup="dialog">SELGROS</button>
     <button type="button" id="purchases" class="small-btn purchases-open panel-proxy" aria-haspopup="dialog">Zakupy</button>
@@ -130,6 +132,18 @@
       </div>
       <div class="form-actions"><button type="button" id="cancelEdit" class="button ghost">Anuluj</button><button type="submit" class="button primary">Zapisz zmiany</button></div>
     </form>
+  </dialog>
+  <dialog id="quickFillDialog" class="quick-fill-dialog">
+    <div class="modal-head"><div><p class="eyebrow">SZYBKIE UZUPEŁNIANIE</p><h2>Brakujące dane produktów</h2></div><button type="button" id="closeQuickFill" class="icon-btn">×</button></div>
+    <p class="quick-fill-intro">Zaznacz dane, które chcesz uzupełniać. Lista pokaże tylko artykuły, którym brakuje wybranych informacji.</p>
+    <div class="quick-fill-options">
+      <label><input id="quickExpiry" type="checkbox" checked> Termin ważności</label>
+      <label><input id="quickBarcode" type="checkbox" checked> Kod kreskowy</label>
+      <label><input id="quickPhoto" type="checkbox" checked> Zdjęcie produktu</label>
+    </div>
+    <p id="quickFillCount" class="quick-fill-count"></p>
+    <div id="quickFillList" class="quick-fill-list"></div>
+    <div class="form-actions"><button type="button" id="closeQuickFillBottom" class="button ghost">Zamknij</button></div>
   </dialog>
   <datalist id="brandOptions"></datalist>
   <dialog id="selgrosDialog" class="selgros-dialog">
@@ -672,5 +686,6 @@
   <script src="user-panel.js" defer></script>
   <script src="loading-indicator.js" defer></script>
   <script src="youtube.js" defer></script>
+  <script src="quick-fill.js" defer></script>
 </body>
 </html>
