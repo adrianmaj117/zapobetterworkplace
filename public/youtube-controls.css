@@ -1,0 +1,6 @@
+.youtube-controls{display:grid;grid-template-columns:1fr 1.35fr;gap:6px;margin:-3px 0 11px}
+.youtube-controls button{border:1px solid #b9d2c2;border-radius:9px;padding:8px 6px;background:#f6fbf7;color:#1b4d38;font-size:11px;font-weight:800}
+.youtube-controls button.main{border-color:#0d6b52;background:#0d6b52;color:#fff}
+.youtube-controls button:disabled{opacity:.45;cursor:not-allowed}
+html[data-theme="dark"] .youtube-controls button{border-color:#466854;background:#1c3426;color:#edf6ef}
+html[data-theme="dark"] .youtube-controls button.main{background:#168366;border-color:#168366}

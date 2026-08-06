@@ -449,6 +449,31 @@ app.get('/api/youtube/search', async (req, res) => {
     res.status(502).json({ error: error.message || 'YouTube chwilowo nie odpowiada.' });
   }
 });
+app.get('/api/youtube/related', async (req, res) => {
+  const videoId = String(req.query.id || '').trim().slice(0, 80);
+  const key = String(process.env.YOUTUBE_API_KEY || '').trim();
+  if (!videoId) return res.status(400).json({ error: 'Brak identyfikatora aktualnego filmu.' });
+  if (!key) return res.status(503).json({ error: 'YouTube nie jest jeszcze skonfigurowany. Dodaj zmienną YOUTUBE_API_KEY w Railway.' });
+  const cacheKey = `related:${videoId}`;
+  const cached = youtubeCache.get(cacheKey);
+  if (cached && Date.now() - cached.savedAt < 10 * 60 * 1000) return res.json(cached.results);
+  try {
+    const params = new URLSearchParams({ part: 'snippet', type: 'video', maxResults: '12', relatedToVideoId: videoId, key });
+    const response = await fetch(`https://www.googleapis.com/youtube/v3/search?${params}`);
+    const body = await response.json();
+    if (!response.ok) throw new Error(body?.error?.message || 'Nie udało się pobrać podobnych filmów z YouTube.');
+    const results = (body.items || []).map(item => ({
+      id: item.id?.videoId,
+      title: item.snippet?.title || 'Film z YouTube',
+      channel: item.snippet?.channelTitle || '',
+      thumbnail: item.snippet?.thumbnails?.medium?.url || item.snippet?.thumbnails?.default?.url || ''
+    })).filter(item => item.id && item.id !== videoId);
+    youtubeCache.set(cacheKey, { savedAt: Date.now(), results });
+    res.json(results);
+  } catch (error) {
+    res.status(502).json({ error: error.message || 'YouTube chwilowo nie odpowiada.' });
+  }
+});
 app.get('/api/users', adminOnly, (req, res) => {
   res.json(db.prepare('SELECT id, username, display_name, role, active, created_at FROM users ORDER BY role DESC, display_name COLLATE NOCASE, username COLLATE NOCASE').all().map(publicUser));
 });
