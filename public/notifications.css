@@ -1,0 +1,26 @@
+.notifications-wrap{position:relative}
+.notifications-open{position:relative}
+.notifications-open span{position:absolute;right:-7px;top:-7px;min-width:19px;height:19px;padding:2px 4px;border:2px solid #fff;border-radius:20px;background:#c73c35;color:#fff;font-size:10px}
+.notifications-panel{position:absolute;z-index:300;right:0;top:calc(100% + 8px);width:min(390px,calc(100vw - 24px));max-height:520px;overflow:auto;border:1px solid #c9ddd0;border-radius:15px;background:#fff;box-shadow:0 16px 42px #102d2140}
+.notifications-panel header{display:flex;justify-content:space-between;gap:8px;padding:12px;border-bottom:1px solid #dce8df}
+.notifications-panel header button,.notification-item button{border:1px solid #b9d6c4;border-radius:7px;padding:5px 7px;background:#f2faf4;color:#216147;font-size:11px;font-weight:800}
+.notification-item{display:flex;justify-content:space-between;gap:10px;padding:11px 13px;border-bottom:1px solid #e4ede7}
+.notification-item b,.notification-item span{display:block}
+.notification-item b{font-size:13px}
+.notification-item span,.notifications-empty{margin-top:3px;color:#60766a;font-size:12px}
+.notification-item.is-read{opacity:.55}
+.notifications-empty{padding:16px;text-align:center}
+.notification-toasts{position:fixed;z-index:9998;right:18px;top:88px;display:grid;gap:9px;width:min(350px,calc(100vw - 32px));pointer-events:none}
+.notification-toast{display:grid;gap:3px;padding:12px 14px;border:1px solid #bbd9c4;border-radius:12px;background:#f8fff9;color:#1e4b36;box-shadow:0 12px 30px #0b241b33}
+.notification-toast b{font-size:13px}
+.notification-toast span{font-size:12px}
+@media(max-width:700px){
+  .notifications-open{font-size:0;padding:8px 9px}
+  .notifications-open::before{content:'🔔';font-size:14px}
+  .notifications-panel{position:fixed;right:10px;left:10px;top:70px;width:auto}
+  .notification-toasts{right:10px;top:78px}
+}
+html[data-theme="dark"] .notifications-panel{border-color:#496955;background:#16261d;color:#f1f8f2}
+html[data-theme="dark"] .notification-item{border-color:#405d4a}
+html[data-theme="dark"] .notification-item span,html[data-theme="dark"] .notifications-empty{color:#c3d6c8}
+html[data-theme="dark"] .notification-toast{background:#1b3424;color:#eff8f1}

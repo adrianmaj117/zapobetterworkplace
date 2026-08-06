@@ -93,6 +93,16 @@ db.exec(`CREATE TABLE IF NOT EXISTS users (
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 )`);
+db.exec(`CREATE TABLE IF NOT EXISTS notifications (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  type TEXT NOT NULL DEFAULT 'info', title TEXT NOT NULL, message TEXT NOT NULL,
+  entity_key TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS notification_reads (
+  notification_id INTEGER NOT NULL, user_id INTEGER NOT NULL,
+  read_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY(notification_id, user_id)
+);`);
 // Starsze wdrożenia miały ograniczenie ról wyłącznie do admin/worker.
 // SQLite nie pozwala rozszerzyć CHECK bez przebudowy tabeli, dlatego robimy
 // jednorazową, zachowującą konta migrację.
@@ -371,6 +381,16 @@ function capabilities(user) {
   const full = isFullAdmin(user); const supply = full || user?.role === 'procurement' || user?.role === 'leader';
   return { users: full, finance: full, selgros: supply, purchases: supply, delivery: supply, deliveryHistory: supply, inventoryEdit: supply, shopping: supply, demand: Boolean(user), inventoryView: Boolean(user) };
 }
+function syncSystemNotifications() {
+  const today = new Date().toISOString().slice(0, 10);
+  const end = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
+  const add = db.prepare('INSERT OR IGNORE INTO notifications (type, title, message, entity_key) VALUES (?, ?, ?, ?)');
+  for (const item of db.prepare("SELECT id,name,expiration_date FROM products WHERE expiration_date IS NOT NULL AND expiration_date<>'' AND expiration_date<=?").all(end)) {
+    const expired = item.expiration_date < today;
+    add.run(expired ? 'warning' : 'expiry', expired ? 'Produkt po terminie' : 'Zbliża się termin ważności', `${item.name} — termin: ${item.expiration_date}`, `expiry:${item.id}:${item.expiration_date}`);
+  }
+  for (const item of db.prepare('SELECT id,name,quantity,unit FROM products WHERE min_quantity>0 AND quantity<=min_quantity').all()) add.run('stock', 'Niski stan magazynowy', `${item.name} — pozostało: ${item.quantity} ${item.unit}`, `stock:${item.id}:${item.quantity}`);
+}
 function allow(capability) { return (req, res, next) => capabilities(req.user)[capability] ? next() : res.status(403).json({ error: 'To konto nie ma dostępu do tej funkcji.' }); }
 function adminOnly(req, res, next) {
   return isFullAdmin(req.user)
@@ -392,11 +412,18 @@ app.post('/api/login', (req, res) => {
 app.use('/api', (req, res, next) => authenticated(req) ? next() : res.status(401).json({ error: 'Zaloguj się, aby zobaczyć magazyn.' }));
 
 app.use('/api', (req, res, next) => {
-  if (req.method !== 'GET' && (capabilities(req.user).inventoryEdit || req.path === '/demand/apply')) return next();
+  if (req.method !== 'GET' && (capabilities(req.user).inventoryEdit || req.path === '/demand/apply' || req.path.startsWith('/notifications'))) return next();
   if (req.user?.role !== 'admin' && req.method !== 'GET') return res.status(403).json({ error: 'To konto ma dostęp wyłącznie do podglądu. Poproś administratora o wykonanie tej zmiany.' });
   next();
 });
 app.get('/api/session', (req, res) => res.json({ user: req.user, capabilities: capabilities(req.user) }));
+app.get('/api/notifications', (req, res) => {
+  syncSystemNotifications();
+  const notifications = db.prepare(`SELECT n.id,n.type,n.title,n.message,n.created_at,CASE WHEN r.notification_id IS NULL THEN 0 ELSE 1 END AS is_read FROM notifications n LEFT JOIN notification_reads r ON r.notification_id=n.id AND r.user_id=? ORDER BY n.id DESC LIMIT 40`).all(req.user.id);
+  res.json({ unread_count: notifications.filter(item => !item.is_read).length, notifications });
+});
+app.post('/api/notifications/:id/read', (req, res) => { db.prepare('INSERT OR IGNORE INTO notification_reads (notification_id,user_id) VALUES (?,?)').run(Number(req.params.id), req.user.id); res.status(204).end(); });
+app.post('/api/notifications/read-all', (req, res) => { db.prepare('INSERT OR IGNORE INTO notification_reads (notification_id,user_id) SELECT id,? FROM notifications').run(req.user.id); res.status(204).end(); });
 app.get('/api/youtube/search', async (req, res) => {
   const query = String(req.query.q || '').trim().slice(0, 100);
   if (!query) return res.status(400).json({ error: 'Wpisz, czego szukasz na YouTube.' });

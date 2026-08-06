@@ -26,6 +26,7 @@
   <link rel="stylesheet" href="dark-wallet-force.css?v=1">
   <link rel="stylesheet" href="youtube-panel.css?v=1">
   <link rel="stylesheet" href="quick-fill.css?v=1">
+  <link rel="stylesheet" href="notifications.css?v=1">
   <script src="dark-mode.js"></script>
   <style>
     .tile .path-edit,.tile .image-edit{opacity:0;pointer-events:none;transition:opacity .18s ease}
@@ -37,6 +38,7 @@
   <div id="loadingOverlay" class="loading-overlay" aria-live="polite" aria-busy="true" hidden>
     <div class="loading-bus-wrap"><img src="assets/delivery-bus-loading.png" alt="Trwa ładowanie" class="loading-bus"><p>Ładowanie danych…</p></div>
   </div>
+  <div id="notificationToasts" class="notification-toasts" aria-live="polite"></div>
   <dialog id="appNoticeDialog" class="app-notice-dialog" aria-labelledby="appNoticeTitle">
     <div class="app-notice-card">
       <img src="assets/delivery-bus-loading.png" class="app-notice-bus" alt="">
@@ -63,6 +65,7 @@
     </button>
     <button type="button" id="themeToggle" class="small-btn theme-toggle-visible" data-theme-auto-label title="Zmień tryb jasny / ciemny"></button>
     <button type="button" id="quickFillOpen" class="small-btn quick-fill-open" title="Szybkie uzupełnianie danych">⚡ Uzupełnij dane</button>
+    <div class="notifications-wrap"><button type="button" id="notificationsOpen" class="small-btn notifications-open" aria-expanded="false" title="Powiadomienia">🔔 <span id="notificationCount" hidden>0</span></button><section id="notificationsPanel" class="notifications-panel" hidden><header><b>Powiadomienia</b><button type="button" id="notificationsReadAll">Oznacz jako przeczytane</button></header><div id="notificationsList" class="notifications-list"></div></section></div>
     <button type="button" id="userPanelOpen" class="user-panel-open" aria-haspopup="dialog"><span class="user-panel-avatar">☺</span><span><b>Panel użytkownika</b><small id="userPanelRole">Ładowanie…</small></span></button>
     <button type="button" id="selgrosCard" class="selgros-open panel-proxy" aria-haspopup="dialog">SELGROS</button>
     <button type="button" id="purchases" class="small-btn purchases-open panel-proxy" aria-haspopup="dialog">Zakupy</button>
@@ -687,5 +690,6 @@
   <script src="loading-indicator.js" defer></script>
   <script src="youtube.js" defer></script>
   <script src="quick-fill.js" defer></script>
+  <script src="notifications.js" defer></script>
 </body>
 </html>
