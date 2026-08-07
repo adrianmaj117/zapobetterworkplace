@@ -1,0 +1,1 @@
+.expired-panel{position:fixed;z-index:9500;left:50%;top:50%;right:auto;transform:translate(-50%,-50%);width:min(560px,calc(100vw - 28px));max-height:calc(100vh - 90px);border-radius:18px;box-shadow:0 22px 60px #102d2180}@media(max-width:700px){.expired-panel{left:50%;right:auto;top:50%;width:calc(100vw - 24px);max-height:calc(100vh - 48px)}}
