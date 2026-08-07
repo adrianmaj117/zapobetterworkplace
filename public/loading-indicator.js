@@ -11,8 +11,11 @@
     const options = args[1] || {};
     const headers = options.headers || {};
     const requestUrl = String(args[0]?.url || args[0] || '');
+    const method = String(options.method || args[0]?.method || 'GET').toUpperCase();
     const background = headers['x-background-refresh'] === '1' || headers['X-Background-Refresh'] === '1' || /\/api\/(notifications|products\/expired|wallet\/me)$/.test(requestUrl);
-    if (background) return originalFetch(...args);
+    // Odczyt danych nigdy nie powinien blokować pracy. Autobus pokazujemy
+    // wyłącznie przy rzeczywistym zapisie lub zmianie wykonanej przez użytkownika.
+    if (background || method === 'GET') return originalFetch(...args);
     active += 1;
     if (active === 1) timer = window.setTimeout(show, 450);
     try { return await originalFetch(...args); }
