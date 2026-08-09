@@ -1,6 +1,6 @@
 (() => {
   const token=localStorage.getItem('zapoToken')||'',canvas=document.querySelector('#gameCanvas'),ctx=canvas.getContext('2d');
-  const sprite=src=>{const image=new Image();image.src=src;return image},sprites={van:sprite('assets/delivery-bus-loading.png'),workshop:sprite('assets/game/warsztat.png'),police:sprite('assets/game/policja.png'),potato:sprite('assets/game/pan-bulwa.png')};
+  const sprite=src=>{const image=new Image();image.onload=()=>{if(!running)preview()};image.src=src;return image},sprites={van:sprite('/assets/delivery-bus-loading.png'),workshop:sprite('/assets/game/warsztat.png'),police:sprite('/assets/game/policja.png'),potato:sprite('/assets/game/pan-bulwa.png')};
   const start=document.querySelector('#start'),restart=document.querySelector('#restart'),message=document.querySelector('#gameMessage'),distanceEl=document.querySelector('#distance'),recordEl=document.querySelector('#record');
   let running=false,last=0,distance=0,speed=300,lane=1,world=0,nextObstacle=420,obstacles=[];const recordKey='zapo.adrian.delivery.record';let record=Number(localStorage.getItem(recordKey)||0);recordEl.textContent=`${Math.floor(record)} m`;
   fetch('/api/session',{headers:{'x-session-token':token}}).then(r=>r.ok?r.json():null).then(data=>{if(!data||data.user?.username!=='adrian')location.replace('magazyn.html')}).catch(()=>location.replace('magazyn.html'));
