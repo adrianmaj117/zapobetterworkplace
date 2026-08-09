@@ -11,6 +11,7 @@
   const walletConfirm = document.querySelector('#walletConfirmDialog');
   let session;
   let walletTimer;
+  let walletDecisionInProgress = false;
   let knownPendingWalletOperations = new Set();
   const show = element => { dialog.close(); element?.click(); };
   const roleText = user => user.role_label || ({ admin:'Admin', procurement:'Zaopatrzenie', leader:'Lider', worker:'Pracownik' }[user.role] || 'Pracownik');
@@ -37,7 +38,12 @@
     const pendingIds = new Set(pending.map(item => String(item.id)));
     const newOperations = pending.filter(item => !knownPendingWalletOperations.has(String(item.id)));
     knownPendingWalletOperations = pendingIds;
-    if (!pending.length) return;
+    if (!pending.length) {
+      if (!walletConfirm.open) document.querySelector('#walletPending').innerHTML = '';
+      return;
+    }
+    // Refresh may run every second. Do not replace this form while its owner is entering a password.
+    if (walletConfirm.open || walletDecisionInProgress) return;
     document.querySelector('#walletPending').innerHTML = pending.map(item => `<article class="wallet-pending"><b>${item.kind === 'create' ? 'Utworzono portfel' : `Zmiana środków: ${Number(item.amount).toLocaleString('pl-PL',{style:'currency',currency:'PLN'})}`}</b><small>${item.note || 'Potwierdź operację własnym hasłem.'}</small><label>Twoje hasło<input type="password" data-wallet-password="${item.id}"></label><div><button class="button ghost" data-wallet-decide="${item.id}" data-accept="false">Odrzuć</button><button class="button primary" data-wallet-decide="${item.id}" data-accept="true">Akceptuję</button></div></article>`).join('');
     if ((showExisting || newOperations.length) && !walletConfirm.open) walletConfirm.showModal();
   }
@@ -68,9 +74,24 @@
     try { await api(`/api/wallet/users/${form.dataset.walletAdjust}/transactions`, { method:'POST', body:JSON.stringify({ amount:Number(form.amount.value), note:form.note.value }) }); await renderWallets(); } catch (error) { alert(error.message); }
   });
   walletConfirm.addEventListener('click', async event => {
-    const button = event.target.closest('[data-wallet-decide]'); if (!button) return;
+    const button = event.target.closest('[data-wallet-decide]'); if (!button || walletDecisionInProgress) return;
     const password = walletConfirm.querySelector(`[data-wallet-password="${button.dataset.walletDecide}"]`)?.value;
-    try { await api(`/api/wallet/transactions/${button.dataset.walletDecide}/decide`, { method:'POST', body:JSON.stringify({ accept: button.dataset.accept === 'true', password }) }); walletConfirm.close(); await walletNotifications(false); } catch (error) { alert(error.message); }
+    if (!password) { (window.showAppAlert ? window.showAppAlert('Wpisz swoje hasło, aby zatwierdzić decyzję.') : alert('Wpisz swoje hasło, aby zatwierdzić decyzję.')); return; }
+    walletDecisionInProgress = true;
+    const buttons = walletConfirm.querySelectorAll('[data-wallet-decide]');
+    buttons.forEach(item => item.disabled = true);
+    const originalText = button.textContent;
+    button.textContent = button.dataset.accept === 'true' ? 'Zapisywanie…' : 'Odrzucanie…';
+    try {
+      await api(`/api/wallet/transactions/${button.dataset.walletDecide}/decide`, { method:'POST', body:JSON.stringify({ accept: button.dataset.accept === 'true', password }) });
+      walletConfirm.close();
+      document.querySelector('#walletPending').innerHTML = '';
+      await walletNotifications(false);
+    } catch (error) {
+      (window.showAppAlert ? window.showAppAlert(error.message) : alert(error.message));
+      buttons.forEach(item => item.disabled = false);
+      button.textContent = originalText;
+    } finally { walletDecisionInProgress = false; }
   });
   document.addEventListener('visibilitychange', () => { clearTimeout(walletTimer); if (document.hidden) walletTimer = setTimeout(scheduleWalletNotifications, 30000); else scheduleWalletNotifications(); });
   document.addEventListener('wallet:open-pending', () => { walletNotifications(true).catch(() => {}); });

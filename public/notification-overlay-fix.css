@@ -1,2 +1,10 @@
 /* Panel powiadomień zawsze nad zawartością magazynu. */
 .notifications-wrap.is-open .notifications-panel{position:fixed!important;z-index:2147483647!important;right:18px!important;left:auto!important;top:76px!important;width:min(390px,calc(100vw - 28px))!important;max-height:calc(100vh - 94px)!important;margin:0!important;display:block!important;text-align:left!important}@media(max-width:700px){.notifications-wrap.is-open .notifications-panel{right:10px!important;left:10px!important;top:72px!important;width:auto!important;max-height:calc(100vh - 84px)!important}}
+/* Finalna warstwa mobilna: otwarte panele nie mogą być zasłonięte przez Zapotrzebowanie. */
+@media(max-width:700px){
+  body:has(.notifications-wrap.is-open) .demand-menu,
+  body:has(#expiredPanel:not([hidden])) .demand-menu{visibility:hidden!important;pointer-events:none!important}
+  body:has(.notifications-wrap.is-open) .demand-menu[open],
+  body:has(#expiredPanel:not([hidden])) .demand-menu[open]{display:none!important}
+  #expiredPanel:not([hidden]){z-index:2147483647!important}
+}
