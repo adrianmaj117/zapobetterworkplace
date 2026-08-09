@@ -62,7 +62,7 @@
   document.querySelector('#closeWalletConfirm').onclick = () => walletConfirm.close();
   dialog.addEventListener('click', async event => {
     const button = event.target.closest('[data-panel-action]'); if (!button) return;
-    if (button.dataset.panelAction === 'game') { dialog.close(); window.location.href = 'gra.html'; return; }
+    if (button.dataset.panelAction === 'game') { dialog.close(); window.location.assign('/gra.html'); return; }
     if (button.dataset.panelAction === 'wallet') { dialog.close(); await renderWallets(); walletDialog.showModal(); return; }
     show(document.querySelector(`#${button.dataset.panelAction}`));
   });
