@@ -2,14 +2,14 @@
   "name": "ZapoBetterWorkPlace — Magazyn",
   "short_name": "ZapoBetter",
   "description": "Magazyn i zapotrzebowanie ZapoBetterWorkPlace",
-  "start_url": "/magazyn.html",
+  "start_url": "/",
   "display": "standalone",
   "background_color": "#f7f8f3",
   "theme_color": "#146b52",
   "icons": [
     {
       "src": "/assets/daily-fruits-logo.png?v=2",
-      "sizes": "192x192",
+      "sizes": "519x510",
       "type": "image/png",
       "purpose": "any maskable"
     }
