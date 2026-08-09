@@ -20,4 +20,17 @@
     menu.open = false;
     document.querySelector(`#${option.dataset.demandOption}`)?.click();
   });
+  // On a phone the demand picker must never cover a notification or expired-stock panel.
+  const keepAbovePanels = () => {
+    const mobile = window.matchMedia('(max-width: 700px)').matches;
+    const notificationsOpen = !document.querySelector('#notificationsPanel')?.hidden;
+    const expiredOpen = !document.querySelector('#expiredPanel')?.hidden;
+    menu.hidden = mobile && (notificationsOpen || expiredOpen);
+  };
+  ['#notificationsPanel', '#expiredPanel'].forEach(selector => {
+    const panel = document.querySelector(selector);
+    if (panel) new MutationObserver(keepAbovePanels).observe(panel, { attributes:true, attributeFilter:['hidden'] });
+  });
+  window.addEventListener('resize', keepAbovePanels);
+  keepAbovePanels();
 })();
