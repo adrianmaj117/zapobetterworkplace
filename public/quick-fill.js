@@ -58,7 +58,7 @@
         name: product.name, category: product.category, brand: product.brand || '', quantity: product.quantity,
         unit: product.unit, min_quantity: product.min_quantity || 0, weight_value: product.weight_value,
         weight_unit: product.weight_unit, received_date: product.received_date, expiration_date: expiry || null,
-        notes: product.notes || '', barcode
+        notes: product.notes || '', barcode, sync_expiry_batch: true
       }) });
       if (photo && photo.size) await api(`/api/products/${product.id}/image`, { method: 'POST', body: JSON.stringify({ image_data: await read(photo) }) });
       await load();

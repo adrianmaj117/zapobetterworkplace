@@ -379,7 +379,7 @@ function isFullAdmin(user) { return user?.role === 'admin' || Boolean(user?.hidd
 function roleLabel(user) { return isFullAdmin(user) && user.role === 'procurement' ? 'Zaopatrzenie (ograniczony dostęp)' : ({ admin: 'Admin', procurement: 'Zaopatrzenie', leader: 'Lider', worker: 'Pracownik' })[user?.role] || 'Pracownik'; }
 function capabilities(user) {
   const full = isFullAdmin(user); const supply = full || user?.role === 'procurement' || user?.role === 'leader';
-  return { users: full, finance: full, selgros: supply, purchases: supply, delivery: supply, deliveryHistory: supply, inventoryEdit: supply, shopping: supply, demand: Boolean(user), inventoryView: Boolean(user) };
+  return { users: full, finance: full, selgros: supply, purchases: supply, delivery: supply, deliveryHistory: supply, inventoryEdit: supply, shopping: supply, demand: Boolean(user), inventoryView: Boolean(user), game: user?.username === 'adrian' };
 }
 function syncSystemNotifications() {
   const today = new Date().toISOString().slice(0, 10);
@@ -765,8 +765,10 @@ function syncProductExpiryFromBatches(productId) {
   const nearest = db.prepare(`SELECT expiration_date FROM product_batches
     WHERE product_id=? AND quantity > 0 AND expiration_date IS NOT NULL
     ORDER BY expiration_date ASC, id ASC LIMIT 1`).get(productId);
+  // A legacy batch without a date must not wipe an already saved product date.
+  if (!nearest) return;
   db.prepare('UPDATE products SET expiration_date=?, updated_at=CURRENT_TIMESTAMP WHERE id=?')
-    .run(nearest ? nearest.expiration_date : null, productId);
+    .run(nearest.expiration_date, productId);
 }
 
 // Przy wydaniu najpierw schodzi najstarsza partia. Partie bez daty zostają na końcu.
@@ -1434,10 +1436,23 @@ app.put('/api/products/:id', (req, res) => {
   if (!validNumber(quantity) || quantity < 0) return res.status(400).json({ error: 'Podaj prawidłową ilość.' });
   const normalizedBarcode = String(barcode || '').trim().replace(/[^0-9A-Za-z-]/g, '').toUpperCase();
   if (normalizedBarcode && db.prepare('SELECT id FROM products WHERE barcode=? AND id<>?').get(normalizedBarcode, id)) return res.status(409).json({ error: 'Ten kod kreskowy jest już przypisany do innego artykułu.' });
+  const parsedExpiration = parseExpiration(expiration_date);
+  const parsedReceived = parseExpiration(received_date);
   db.exec('BEGIN');
   try {
     db.prepare(`UPDATE products SET name=?, category=?, brand=?, unit=?, quantity=?, min_quantity=?, weight_value=?, weight_unit=?, received_date=?, expiration_date=?, notes=?, barcode=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`)
-      .run(name.trim(), canonicalCategory(category), brand.trim(), (unit || 'szt.').trim(), quantity, min_quantity, validNumber(weight_value) && weight_value > 0 ? weight_value : null, weight_unit || null, parseExpiration(received_date), parseExpiration(expiration_date), (notes || '').trim(), normalizedBarcode || null, id);
+      .run(name.trim(), canonicalCategory(category), brand.trim(), (unit || 'szt.').trim(), quantity, min_quantity, validNumber(weight_value) && weight_value > 0 ? weight_value : null, weight_unit || null, parsedReceived, parsedExpiration, (notes || '').trim(), normalizedBarcode || null, id);
+    if (req.body?.sync_expiry_batch && parsedExpiration) {
+      const batches = db.prepare('SELECT COUNT(*) AS count FROM product_batches WHERE product_id=? AND quantity>0').get(id);
+      if (!batches.count && quantity > 0) {
+        db.prepare('INSERT INTO product_batches (product_id, quantity, expiration_date, received_date) VALUES (?, ?, ?, ?)')
+          .run(id, quantity, parsedExpiration, parsedReceived);
+      } else {
+        db.prepare(`UPDATE product_batches SET expiration_date=COALESCE(expiration_date, ?), received_date=COALESCE(received_date, ?) WHERE product_id=? AND quantity>0`)
+          .run(parsedExpiration, parsedReceived, id);
+      }
+      syncProductExpiryFromBatches(id);
+    }
     const difference = quantity - existing.quantity;
     if (difference !== 0) db.prepare("INSERT INTO movements (product_id, type, quantity, note) VALUES (?, 'adjustment', ?, 'Edycja ilości')").run(id, Math.abs(difference));
     db.exec('COMMIT');
