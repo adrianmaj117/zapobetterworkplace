@@ -765,8 +765,13 @@ function syncProductExpiryFromBatches(productId) {
   const nearest = db.prepare(`SELECT expiration_date FROM product_batches
     WHERE product_id=? AND quantity > 0 AND expiration_date IS NOT NULL
     ORDER BY expiration_date ASC, id ASC LIMIT 1`).get(productId);
-  // A legacy batch without a date must not wipe an already saved product date.
-  if (!nearest) return;
+  // Brak daty partii nie może skasować terminu, jeśli produkt nadal jest na stanie.
+  // Gdy stan spadnie do 0, termin znika razem z produktem ze stanu.
+  if (!nearest) {
+    const product = db.prepare('SELECT quantity FROM products WHERE id=?').get(productId);
+    if (product && Number(product.quantity) <= 0) db.prepare('UPDATE products SET expiration_date=NULL, updated_at=CURRENT_TIMESTAMP WHERE id=?').run(productId);
+    return;
+  }
   db.prepare('UPDATE products SET expiration_date=?, updated_at=CURRENT_TIMESTAMP WHERE id=?')
     .run(nearest.expiration_date, productId);
 }
@@ -1436,7 +1441,9 @@ app.put('/api/products/:id', (req, res) => {
   if (!validNumber(quantity) || quantity < 0) return res.status(400).json({ error: 'Podaj prawidłową ilość.' });
   const normalizedBarcode = String(barcode || '').trim().replace(/[^0-9A-Za-z-]/g, '').toUpperCase();
   if (normalizedBarcode && db.prepare('SELECT id FROM products WHERE barcode=? AND id<>?').get(normalizedBarcode, id)) return res.status(409).json({ error: 'Ten kod kreskowy jest już przypisany do innego artykułu.' });
-  const parsedExpiration = parseExpiration(expiration_date);
+  // Pusta data z formularza nie może skasować wpisanego wcześniej terminu,
+  // dopóki produkt nadal znajduje się na stanie. Termin znika dopiero przy stanie 0.
+  const parsedExpiration = parseExpiration(expiration_date) || (Number(quantity) > 0 ? existing.expiration_date : null);
   const parsedReceived = parseExpiration(received_date);
   db.exec('BEGIN');
   try {

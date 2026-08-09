@@ -36,6 +36,7 @@
   <link rel="stylesheet" href="quick-fill.css?v=1">
   <link rel="stylesheet" href="quick-fill-scan.css?v=1">
   <link rel="stylesheet" href="quick-fill-approve.css?v=1">
+  <link rel="stylesheet" href="quick-fill-demand-mobile.css?v=1">
   <link rel="stylesheet" href="inventory-export.css?v=1">
   <link rel="stylesheet" href="topbar-panels.css?v=1">
   <link rel="stylesheet" href="notification-overlay-fix.css?v=2">
@@ -170,6 +171,8 @@
       <label><input id="quickBarcode" type="checkbox" checked> Kod kreskowy</label>
       <label><input id="quickPhoto" type="checkbox" checked> Zdjęcie produktu</label>
     </div>
+    <div class="quick-fill-search"><label>Znajdź lub zeskanuj produkt<input id="quickFillSearch" autocomplete="off" placeholder="Nazwa albo kod kreskowy"></label><button type="button" id="quickFillScan" class="small-btn" data-scan-barcode-for="quickFillSearch">▥ Skanuj</button></div>
+    <p id="quickFillSearchStatus" class="quick-fill-search-status" hidden></p>
     <p id="quickFillCount" class="quick-fill-count"></p>
     <div id="quickFillList" class="quick-fill-list"></div>
     <div class="form-actions"><button type="button" id="closeQuickFillBottom" class="button ghost">Zamknij</button></div>

@@ -4,6 +4,8 @@
   const open = document.querySelector('#quickFillOpen');
   const list = document.querySelector('#quickFillList');
   const count = document.querySelector('#quickFillCount');
+  const search = document.querySelector('#quickFillSearch');
+  const searchStatus = document.querySelector('#quickFillSearchStatus');
   const fields = {
     expiry: document.querySelector('#quickExpiry'),
     barcode: document.querySelector('#quickBarcode'),
@@ -22,9 +24,14 @@
     return [needs.expiry && !product.expiration_date ? 'brak terminu' : '', needs.barcode && !product.barcode ? 'brak kodu' : '', needs.photo && !product.has_image ? 'brak zdjęcia' : ''].filter(Boolean);
   };
   const categoryName = product => product.category || 'Inne';
+  const normalize = value => String(value || '').toLocaleLowerCase('pl-PL').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+  const excludedCategory = product => { const category = normalize(categoryName(product)); return category === 'inne' || category.includes('bulki z katowic') || category.includes('owoce i warzywa'); };
+  const cleanBarcode = value => String(value || '').trim().replace(/[^0-9A-Za-z-]/g, '').toUpperCase();
+  let searchText = '';
 
   function render() {
-    const products = all.filter(incomplete).sort((a, b) => categoryName(a).localeCompare(categoryName(b), 'pl') || a.name.localeCompare(b.name, 'pl'));
+    const query = normalize(searchText);
+    const products = all.filter(product => !excludedCategory(product) && incomplete(product) && (!query || normalize(`${product.name} ${product.brand || ''} ${product.barcode || ''}`).includes(query))).sort((a, b) => categoryName(a).localeCompare(categoryName(b), 'pl') || a.name.localeCompare(b.name, 'pl'));
     count.textContent = products.length ? `Do uzupełnienia: ${products.length} produktów.` : 'Wszystkie wybrane dane są już uzupełnione.';
     if (!products.length) { list.innerHTML = '<div class="quick-fill-empty">✓ Gotowe — nie ma braków w wybranych polach.</div>'; return; }
     const groups = new Map();
@@ -68,8 +75,21 @@
       button.disabled = false; button.textContent = '✓';
     }
   }
-  open.addEventListener('click', () => { render(); dialog.showModal(); });
+  function updateSearch() {
+    searchText = search?.value || '';
+    const code = cleanBarcode(searchText);
+    const scanned = code && all.find(product => cleanBarcode(product.barcode) === code);
+    if (searchStatus) {
+      if (scanned && excludedCategory(scanned)) { searchStatus.hidden = false; searchStatus.textContent = `„${scanned.name}” należy do kategorii pominiętej w szybkim uzupełnianiu.`; }
+      else if (scanned) { searchStatus.hidden = false; searchStatus.textContent = `Znaleziono: ${scanned.name}.`; }
+      else { searchStatus.hidden = true; searchStatus.textContent = ''; }
+    }
+    render();
+    if (scanned && !excludedCategory(scanned)) requestAnimationFrame(() => list.querySelector(`[data-id="${scanned.id}"]`)?.scrollIntoView({ behavior:'smooth', block:'center' }));
+  }
+  open.addEventListener('click', () => { if (search) search.value = ''; searchText = ''; if (searchStatus) searchStatus.hidden = true; render(); dialog.showModal(); });
   ['closeQuickFill', 'closeQuickFillBottom'].forEach(id => document.querySelector(`#${id}`).addEventListener('click', () => dialog.close()));
   Object.values(fields).forEach(input => input.addEventListener('change', render));
+  search?.addEventListener('input', updateSearch);
   list.addEventListener('submit', save);
 })();

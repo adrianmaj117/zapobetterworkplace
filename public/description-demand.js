@@ -41,14 +41,23 @@
     const categories = [...new Set(all.filter(item => !filterCategory || item.category === filterCategory).map(item => item.category))].sort((a, b) => a.localeCompare(b, 'pl'));
     return `<option value="">Dopasuj produkt z magazynu…</option>${categories.map(category => `<optgroup label="${escapeHtml(category)}">${all.filter(item => item.category === category).sort((a, b) => a.name.localeCompare(b.name, 'pl')).map(item => `<option value="${item.id}" ${Number(selected) === item.id ? 'selected' : ''}>${escapeHtml(productLabel(item))}</option>`).join('')}</optgroup>`).join('')}`;
   };
+  function updateRowPhoto(row) {
+    const image = row.querySelector('.demand-product-picture img');
+    const product = all.find(item => item.id === Number(row.querySelector('.demand-product')?.value));
+    if (!image) return;
+    image.src = 'assets/category-foods.png';
+    image.alt = product ? `Zdjęcie produktu ${product.name}` : 'Zdjęcie poglądowe produktu';
+    if (product?.has_image) api(`/api/products/${product.id}/image`).then(data => { if (data?.image_data) image.src = data.image_data; }).catch(() => {});
+  }
   function addRow(productId = '', quantity = '', source = '') {
     const missing = !productId && source;
     const selectedProduct = all.find(item => item.id === Number(productId));
     const selectedCategory = selectedProduct?.category || suggestedCategory(source);
     const row = document.createElement('div'); row.className = `demand-row${missing ? ' is-missing' : ''}`;
     const quickAdd = missing ? `<div class="missing-product-panel"><strong>Brak produktu w bazie</strong><span>Wybierz kategorię i dodaj go ze stanem 0.</span><input class="missing-name" value="${escapeHtml(proposedName(source))}" aria-label="Nazwa nowego produktu"><select class="missing-category" aria-label="Kategoria nowego produktu">${categoryOptions(selectedCategory)}</select><button type="button" class="small-btn add-missing-product">＋ Dodaj do bazy</button></div>` : '';
-    row.innerHTML = `<input class="demand-raw" aria-label="Wiersz opisu" value="${escapeHtml(source)}" placeholder="Wiersz z opisu"><select class="demand-category" aria-label="Kategoria">${categoryOptions(selectedCategory)}</select><select class="demand-product" aria-label="Produkt">${productOptions(productId, selectedCategory)}</select><input class="demand-quantity" aria-label="Ilość" type="number" min="0.01" step="any" value="${escapeHtml(quantity)}" placeholder="Ilość"><button type="button" class="demand-remove" title="Usuń pozycję" aria-label="Usuń pozycję">×</button>${quickAdd}`;
+    row.innerHTML = `<div class="demand-product-picture"><img src="assets/category-foods.png" alt="Zdjęcie poglądowe produktu"></div><div class="demand-entry-main"><input class="demand-raw" aria-label="Wiersz opisu" value="${escapeHtml(source)}" placeholder="Wiersz z opisu"><div class="demand-entry-selects"><select class="demand-category" aria-label="Kategoria">${categoryOptions(selectedCategory)}</select><select class="demand-product" aria-label="Produkt">${productOptions(productId, selectedCategory)}</select></div></div><label class="demand-quantity-wrap">Ilość<input class="demand-quantity" aria-label="Ilość" type="number" min="0.01" step="any" value="${escapeHtml(quantity)}" placeholder="0"></label><button type="button" class="demand-remove" title="Usuń pozycję" aria-label="Usuń pozycję">×</button>${quickAdd}`;
     rows.append(row);
+    updateRowPhoto(row);
     updateNameMatch(row);
   }
   function updateNameMatch(row) {
@@ -216,6 +225,7 @@
       if (found) row.querySelector('.demand-category').value = found.category;
       clearMissing(row);
     }
+    updateRowPhoto(row);
     updateNameMatch(row);
     renderShortages();
   });
