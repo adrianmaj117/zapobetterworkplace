@@ -1074,17 +1074,27 @@ function isExcludedShoppingItem(item) {
   const normalize = value => String(value || '').toLocaleLowerCase('pl-PL').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
   const category = normalize(item.category);
   const text = normalize(`${item.name} ${item.category}`);
-  return category === 'inne' || category.includes('owoce') || category.includes('bulki z katowic') || text.includes('office box') || ['bajgiel', 'bagiel', 'bulka', 'ciabatta', 'bagietka', 'kanapk'].some(word => text.includes(word));
+  return category === 'inne' || category.includes('owoce') || category.includes('warzywa') || (category.includes('bulki') && category.includes('katowic')) || text.includes('office box') || ['bajgiel', 'bagiel', 'bulka', 'ciabatta', 'bagietka', 'kanapk'].some(word => text.includes(word));
+}
+
+// Stare wpisy z kategorii dostarczanych zewnętrznie również nie mogą blokować
+// tworzenia ani otwierania właściwej listy zakupów.
+function listHasVisiblePendingItems(listId) {
+  return db.prepare('SELECT * FROM shopping_list_items WHERE shopping_list_id=?').all(listId)
+    .some(item => !isExcludedShoppingItem(item) && Number(item.purchased_quantity || 0) < Number(item.missing_quantity || 0));
+}
+
+function latestVisibleShoppingListId() {
+  const rows = db.prepare('SELECT id FROM shopping_lists ORDER BY id DESC').all();
+  const active = rows.find(row => listHasVisiblePendingItems(row.id));
+  if (active) return Number(active.id);
+  const visible = rows.find(row => shoppingListById(row.id)?.items.length);
+  return visible ? Number(visible.id) : null;
 }
 
 function openShoppingList(listDate, sourceText = '') {
-  const active = db.prepare(`SELECT l.id FROM shopping_lists l
-    WHERE EXISTS (
-      SELECT 1 FROM shopping_list_items i
-      WHERE i.shopping_list_id=l.id AND COALESCE(i.purchased_quantity, 0) < i.missing_quantity
-    )
-    ORDER BY l.id DESC LIMIT 1`).get();
-  if (active) return Number(active.id);
+  const active = latestVisibleShoppingListId();
+  if (active && listHasVisiblePendingItems(active)) return active;
   return Number(db.prepare('INSERT INTO shopping_lists (source_text, list_date) VALUES (?, ?)')
     .run(String(sourceText || '').slice(0, 50000), listDate).lastInsertRowid);
 }
@@ -1103,12 +1113,8 @@ function shoppingListById(id) {
   return list;
 }
 app.get('/api/shopping-lists/latest', allow('shopping'), (req, res) => {
-  const latest = db.prepare(`SELECT l.id FROM shopping_lists l
-    ORDER BY CASE WHEN EXISTS (
-      SELECT 1 FROM shopping_list_items i
-      WHERE i.shopping_list_id=l.id AND COALESCE(i.purchased_quantity, 0) < i.missing_quantity
-    ) THEN 0 ELSE 1 END, l.id DESC LIMIT 1`).get();
-  res.json(latest ? shoppingListById(latest.id) : null);
+  const latestId = latestVisibleShoppingListId();
+  res.json(latestId ? shoppingListById(latestId) : null);
 });
 app.post('/api/shopping-lists', (req, res) => {
   const rawItems = Array.isArray(req.body?.items) ? req.body.items : [];
@@ -1117,7 +1123,7 @@ app.post('/api/shopping-lists', (req, res) => {
     name: String(item.name || '').trim(), category: String(item.category || 'Inne').trim() || 'Inne', brand: String(item.brand || '').trim(),
     weight: String(item.weight || '').trim(), required_quantity: Number(item.required_quantity), available_quantity: Number(item.available_quantity),
     missing_quantity: Number(item.missing_quantity), unit: String(item.unit || 'szt.').trim() || 'szt.'
-  })).filter(item => item.name && validNumber(item.required_quantity) && item.required_quantity > 0 && validNumber(item.available_quantity) && item.available_quantity >= 0 && validNumber(item.missing_quantity) && item.missing_quantity > 0);
+  })).filter(item => item.name && validNumber(item.required_quantity) && item.required_quantity > 0 && validNumber(item.available_quantity) && item.available_quantity >= 0 && validNumber(item.missing_quantity) && item.missing_quantity > 0 && !isExcludedShoppingItem(item));
   db.exec('BEGIN');
   try {
     const listDate = /^\d{4}-\d{2}-\d{2}$/.test(String(req.body?.list_date || '')) ? req.body.list_date : new Date().toISOString().slice(0, 10);
@@ -1157,6 +1163,7 @@ app.post('/api/shopping-lists/items', (req, res) => {
     missing_quantity: quantity,
     unit: String(body.unit || 'szt.').trim() || 'szt.'
   };
+  if (isExcludedShoppingItem(item)) return res.status(400).json({ error: 'Ta kategoria jest dostarczana zewnętrznie i nie trafia na listę zakupów.' });
   db.exec('BEGIN');
   try {
     const listId = openShoppingList(listDate, 'Ręcznie dodana pozycja');

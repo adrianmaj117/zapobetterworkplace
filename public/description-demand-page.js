@@ -33,6 +33,15 @@
     const text = normalize(value);
     return text.includes('office box') || ['bajgiel', 'bagiel', 'bulka', 'ciabatta', 'bagietka', 'kanapk'].some(word => text.includes(word));
   };
+  // Owoce, warzywa, „Inne” oraz pieczywo z Katowic są dostarczane osobno.
+  // Są częścią zapotrzebowania, ale nigdy nie tworzą braków zakupowych.
+  const excludedFromShopping = productOrCategory => {
+    const category = normalize(typeof productOrCategory === 'string' ? productOrCategory : productOrCategory?.category);
+    return category === 'inne'
+      || category.includes('owoce')
+      || category.includes('warzywa')
+      || (category.includes('bulki') && category.includes('katowic'));
+  };
   const proposedName = line => String(line || '').replace(/(?:\s|^)(\d+(?:[,.]\d+)?)(?:\s*(?:szt\.?|sztuk(?:a|i)?|opak\.?|opakowanie|op\.?|x|kg|kilogram(?:y|ow)?|l\b|lit(?:r|ry|row)?))?\s*$/i, '').replace(/[—–:-]\s*$/, '').trim() || 'Nowy produkt';
   const tokens = value => normalize(value).split(' ').filter(word => word.length > 1 && !/^\d+$/.test(word) && !ignoredWords.has(word));
   const brand = product => product.brand || (product.category === 'Bakalie' ? 'HEBAR' : 'Pozostałe');
@@ -119,7 +128,6 @@
     const product = getProduct(card);
     const meta = card.querySelector('.review-meta');
     const note = card.querySelector('.match-note');
-    const missing = card.querySelector('.review-missing');
     card.classList.remove('is-match', 'is-mismatch', 'is-missing');
     if (product) {
       category.value = product.category;
@@ -129,15 +137,11 @@
       card.classList.add(direct ? 'is-match' : 'is-mismatch');
       meta.innerHTML = `<b>Stan: ${esc(product.quantity)} ${esc(product.unit)}</b><span>${esc(product.category)} · ${esc(brand(product))} · ${esc(weight(product))}</span>`;
       note.textContent = direct ? '✓ Dopasowano do produktu w magazynie' : 'Sprawdź dopasowanie — możesz zmienić produkt z listy.';
-      missing.hidden = true;
     } else {
       setCardPhoto(card, null);
       card.classList.add('is-missing');
       meta.textContent = 'Nie wybrano produktu z magazynu';
-      note.textContent = 'Nie znaleziono pewnego dopasowania. Wybierz produkt lub dodaj nowy.';
-      missing.hidden = false;
-      missing.querySelector('.missing-name').value = proposedName(raw);
-      missing.querySelector('.missing-category').value = category.value || suggestedCategory(raw);
+      note.textContent = 'Nie znaleziono pewnego dopasowania — wybierz produkt z listy.';
     }
     if (!options.skipShortages) renderShortages();
   }
@@ -146,7 +150,7 @@
     const category = matched?.category || suggestedCategory(raw);
     const card = document.createElement('article');
     card.className = 'review-row';
-    card.innerHTML = `<div class="review-photo"><img src="assets/category-foods.png" alt="Zdjęcie poglądowe produktu"></div><div class="review-main"><input class="review-raw" value="${esc(raw)}" aria-label="Wiersz opisu" placeholder="Nazwa z opisu"><div class="review-selects"><select class="review-category" aria-label="Kategoria">${categoryOptions(category)}</select><select class="review-product" aria-label="Produkt">${productOptions(category, matched?.id || '')}</select></div><div class="review-meta"></div><p class="match-note"></p><div class="review-missing" hidden><span>Brak w bazie:</span><input class="missing-name" aria-label="Nazwa nowego produktu"><select class="missing-category" aria-label="Kategoria nowego produktu">${categoryOptions(category)}</select><button type="button" class="add-missing">Dodaj do bazy</button></div></div><label class="quantity-box">Ilość<input class="review-quantity" type="number" min="0.001" step="any" value="${esc(quantity)}" placeholder="0"></label><button type="button" class="review-remove" aria-label="Usuń pozycję">×</button>`;
+    card.innerHTML = `<div class="review-photo"><img src="assets/category-foods.png" alt="Zdjęcie poglądowe produktu"></div><div class="review-main"><input class="review-raw" value="${esc(raw)}" aria-label="Wiersz opisu" placeholder="Nazwa z opisu"><div class="review-selects"><select class="review-category" aria-label="Kategoria">${categoryOptions(category)}</select><select class="review-product" aria-label="Produkt">${productOptions(category, matched?.id || '')}</select></div><div class="review-meta"></div><p class="match-note"></p></div><label class="quantity-box">Ilość<input class="review-quantity" type="number" min="0.001" step="any" value="${esc(quantity)}" placeholder="0"></label><button type="button" class="review-remove" aria-label="Usuń pozycję">×</button>`;
     reviewRows.append(card);
     updateCard(card, { skipShortages:true });
   }
@@ -163,11 +167,15 @@
       const entry = grouped.get(product.id) || { product, requested:0 };
       entry.requested += quantity; grouped.set(product.id, entry);
     });
-    const shortages = [...grouped.values()].map(entry => ({ ...entry, missing:Math.max(0, entry.requested - Number(entry.product.quantity || 0)) })).filter(entry => entry.missing > 0);
+    const shortages = [...grouped.values()]
+      .map(entry => ({ ...entry, missing:Math.max(0, entry.requested - Number(entry.product.quantity || 0)) }))
+      .filter(entry => entry.missing > 0 && !excludedFromShopping(entry.product));
     shortagePanel.hidden = false;
-    if (!shortages.length && !unresolved.length) {
+    // Produkty dostarczane zewnętrznie zostają w zapotrzebowaniu, ale nie są
+    // brakami zakupowymi i nie mogą otrzymać czerwonego oznaczenia.
+    if (!shortages.length) {
       shortagePanel.className = 'shortage-panel is-clear';
-      shortagePanel.innerHTML = '<h3>✓ Stany wystarczają do realizacji zapotrzebowania.</h3>';
+      shortagePanel.innerHTML = `<h3>✓ Braków do zakupienia nie ma.</h3>${unresolved.length ? `<p>Wybierz produkt dla ${unresolved.length} ${unresolved.length === 1 ? 'wiersza' : 'wierszy'} przed zatwierdzeniem.</p>` : ''}`;
       return;
     }
     shortagePanel.className = 'shortage-panel';

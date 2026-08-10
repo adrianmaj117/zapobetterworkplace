@@ -13,10 +13,17 @@
   const productBrand = item => item.brand || (item.category === 'Bakalie' ? 'HEBAR' : 'Pozostałe');
   const productWeight = item => item.weight || (item.weight_value ? `${item.weight_value} ${item.weight_unit}` : 'bez gramatury');
   const currentDate = () => new Date().toISOString().slice(0, 10);
+  const excludedShoppingCategory = value => {
+    const category = String(value || '').toLocaleLowerCase('pl-PL').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+    return category === 'inne'
+      || category.includes('owoce')
+      || category.includes('warzywa')
+      || (category.includes('bulki') && category.includes('katowic'));
+  };
 
   function categoryChoices() {
     const values = [...new Set([...cats, ...all.map(item => item.category), 'Nabiał', 'Owoce i Warzywa', 'Zioła', 'Bułki z KATOWIC', 'Inne'])]
-      .filter(Boolean).sort((a, b) => a.localeCompare(b, 'pl'));
+      .filter(value => value && !excludedShoppingCategory(value)).sort((a, b) => a.localeCompare(b, 'pl'));
     document.querySelector('#manualShoppingCategories').innerHTML = values.map(value => `<option value="${escapeHtml(value)}"></option>`).join('');
   }
 
@@ -55,8 +62,24 @@
     const win = window.open('', '_blank');
     if (!win) return alert('Przeglądarka zablokowała okno wydruku. Zezwól na wyskakujące okna i spróbuj ponownie.');
     const logo = `${window.location.origin}/assets/daily-fruits-logo.png`;
+    // Ten sam kod, który widoczny jest w karcie SELGROS w aplikacji.
+    // Dzięki temu karta na wydruku pozostaje skanowalna.
+    let selgrosBarcode = document.querySelector('#selgrosCardDisplay')?.innerHTML || '';
+    if (!/<(?:rect|path|line|g)\b/i.test(selgrosBarcode) && window.JsBarcode) {
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      window.JsBarcode(svg, '8112402006', { format:'CODE128', displayValue:true, fontSize:22, height:105, margin:18, lineColor:'#000', background:'#fff' });
+      selgrosBarcode = svg.outerHTML;
+    }
+    let selgrosCard = `<aside class="print-selgros" aria-label="Karta SELGROS"><strong>SELGROS</strong>${selgrosBarcode}<span>NIP: 6793077034</span></aside>`;
     const rows = items.map(item => `<tr><td>${escapeHtml(item.category || 'Inne')}</td><td><b>${escapeHtml(item.name)}</b>${item.brand ? `<small>${escapeHtml(productBrand(item))}${productWeight(item) !== 'bez gramatury' ? ` · ${escapeHtml(productWeight(item))}` : ''}</small>` : ''}</td><td>${number(item.available_quantity)} ${escapeHtml(item.unit || 'szt.')}</td><td><b>${remaining(item)} ${escapeHtml(item.unit || 'szt.')}</b></td></tr>`).join('');
     win.document.write(`<!doctype html><html lang="pl"><head><meta charset="utf-8"><title>Lista zakupów – ZapoBetterWorkPlace</title><style>@page{size:A4;margin:7mm}*{box-sizing:border-box}body{margin:0;color:#173b2e;font:10.5px/1.25 Arial,sans-serif}.brand{display:flex;align-items:center;gap:11px;border-bottom:1px solid #b8d0c1;padding:0 0 6px;margin-bottom:7px}.brand img{width:46px;height:46px;object-fit:contain;border-radius:9px}.brand h1{font:700 19px Georgia,serif;margin:0}.brand small{display:block;margin-top:2px;color:#607469}.title{display:flex;justify-content:space-between;align-items:end;margin:6px 0}.title h2{font:700 17px Georgia,serif;margin:0}.title p{margin:0;color:#526d5e}table{width:100%;border-collapse:collapse}th,td{border:1px solid #cddbd2;padding:4px 5px;text-align:left;vertical-align:top}th{background:#edf5ef;font-size:9px;text-transform:uppercase;letter-spacing:.2px}td:nth-child(1){width:19%}td:nth-child(3){width:12%;white-space:nowrap}td:nth-child(4){width:14%;white-space:nowrap;color:#9d2e29}td small{display:block;color:#5b7062;font-size:9px;margin-top:1px}tr{break-inside:avoid}.footer{margin:6px 0 0;text-align:right;font-size:8.5px;color:#78877f}</style></head><body><header class="brand"><img src="${logo}" alt="Daily Fruits"><div><h1>ZapoBetterWorkPlace</h1><small>Magazyn · lista zakupów</small></div></header><section class="title"><h2>Lista zakupów</h2><p>Na dzień: ${escapeHtml(list.list_date || list.created_at || '')}</p></section><table><thead><tr><th>Kategoria</th><th>Produkt</th><th>Stan</th><th>Do kupienia</th></tr></thead><tbody>${rows}</tbody></table><p class="footer">Wygenerowano z Magazynu BetterWorkPlace</p></body></html>`);
+    // Karta jest dodawana do tego samego dokumentu wydruku, w prawym górnym
+    // rogu pierwszej strony. Nie zmniejsza przez to tabeli z zakupami.
+    const cardHost = win.document.createElement('div');
+    cardHost.innerHTML = selgrosCard;
+    win.document.body.append(cardHost);
+    selgrosCard = '';
+    win.document.write(`<style>.print-selgros{position:absolute;top:7mm;right:7mm;width:208px;border:1px solid #d9e2dc;border-radius:8px;overflow:hidden;background:#fff;text-align:center}.print-selgros strong{display:block;background:#e30613;color:#fff;padding:6px;font-size:12px;letter-spacing:.08em}.print-selgros svg{display:block;width:100%;height:auto;margin:4px auto}.print-selgros img{display:block;width:100%;height:104px;object-fit:contain;background:#fff}.print-selgros span{display:block;border-top:1px solid #e3e9e5;padding:4px 6px;font-size:9px;font-weight:700;letter-spacing:.03em}</style>${selgrosCard}`);
     win.document.close();
     const print = () => { try { win.focus(); win.print(); } catch (_) { /* blokada wyskakującego okna */ } };
     // Czekamy na logo, ale nie zatrzymujemy wydruku, gdy przeglądarka nie
