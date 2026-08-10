@@ -25,7 +25,15 @@
   };
   const categoryName = product => product.category || 'Inne';
   const normalize = value => String(value || '').toLocaleLowerCase('pl-PL').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
-  const excludedCategory = product => { const category = normalize(categoryName(product)); return category === 'inne' || category.includes('bulki z katowic') || category.includes('owoce i warzywa'); };
+  // Kategorie obsługiwane poza stanem magazynowym nie trafiają do tej listy.
+  // Sprawdzamy też odmiany nazw, np. samo „Owoce” albo „Warzywa”.
+  const excludedCategory = product => {
+    const category = normalize(categoryName(product));
+    return category === 'inne'
+      || (category.includes('bulki') && category.includes('katowic'))
+      || category.includes('owoce')
+      || category.includes('warzywa');
+  };
   const cleanBarcode = value => String(value || '').trim().replace(/[^0-9A-Za-z-]/g, '').toUpperCase();
   let searchText = '';
 
@@ -43,7 +51,7 @@
     const badges = missingBadges(product).map(badge => `<span>${badge}</span>`).join('');
     const barcodeField = wants.barcode && !product.barcode
       ? `<label>Kod<div class="quick-fill-barcode"><input id="quickBarcode-${product.id}" name="barcode" inputmode="numeric" autocomplete="off" placeholder="Zeskanuj lub wpisz"><button type="button" class="small-btn" data-scan-barcode-for="quickBarcode-${product.id}">▥ Skanuj</button></div></label>` : '';
-    return `<form class="quick-fill-row" data-id="${product.id}"><div class="quick-fill-product"><b>${esc(product.name)}</b><small>${esc(product.brand || 'Pozostałe')} · ${product.weight_value ? `${product.weight_value} ${esc(product.weight_unit)}` : 'bez gramatury'}</small><div class="quick-fill-badges">${badges}</div></div><div class="quick-fill-fields">${wants.expiry && !product.expiration_date ? '<label>Termin<input name="expiry" type="date" required></label>' : ''}${barcodeField}${wants.photo && !product.has_image ? '<label>Zdjęcie<input name="photo" type="file" accept="image/*"></label>' : ''}</div><button type="submit" class="quick-fill-approve" aria-label="Zatwierdź i zapisz" title="Zatwierdź i zapisz">✓</button></form>`;
+    return `<form class="quick-fill-row" data-id="${product.id}"><div class="quick-fill-product"><b>${esc(product.name)}</b><small>${esc(product.brand || 'Pozostałe')} · ${product.weight_value ? `${product.weight_value} ${esc(product.weight_unit)}` : 'bez gramatury'}</small><div class="quick-fill-badges">${badges}</div></div><div class="quick-fill-fields">${wants.expiry && !product.expiration_date ? '<label>Termin<input name="expiry" type="date" required></label>' : ''}${barcodeField}${wants.photo && !product.has_image ? '<label>Zdjęcie<input name="photo" type="file" accept="image/*"></label>' : ''}</div><button type="submit" class="quick-fill-approve" aria-label="Zatwierdź i zapisz" title="Zatwierdź i zapisz"><span>✓</span><b>Zapisz</b></button></form>`;
   }
   async function save(event) {
     const form = event.target.closest('.quick-fill-row');
@@ -65,14 +73,14 @@
         name: product.name, category: product.category, brand: product.brand || '', quantity: product.quantity,
         unit: product.unit, min_quantity: product.min_quantity || 0, weight_value: product.weight_value,
         weight_unit: product.weight_unit, received_date: product.received_date, expiration_date: expiry || null,
-        notes: product.notes || '', barcode, sync_expiry_batch: true
+        notes: product.notes || '', barcode
       }) });
       if (photo && photo.size) await api(`/api/products/${product.id}/image`, { method: 'POST', body: JSON.stringify({ image_data: await read(photo) }) });
       await load();
       render();
     } catch (error) {
       window.alert(error.message || 'Nie udało się zapisać danych.');
-      button.disabled = false; button.textContent = '✓';
+      button.disabled = false; button.innerHTML = '<span>✓</span><b>Zapisz</b>';
     }
   }
   function updateSearch() {
@@ -85,7 +93,13 @@
       else { searchStatus.hidden = true; searchStatus.textContent = ''; }
     }
     render();
-    if (scanned && !excludedCategory(scanned)) requestAnimationFrame(() => list.querySelector(`[data-id="${scanned.id}"]`)?.scrollIntoView({ behavior:'smooth', block:'center' }));
+    if (scanned && !excludedCategory(scanned)) requestAnimationFrame(() => {
+      const row = list.querySelector(`[data-id="${scanned.id}"]`);
+      row?.scrollIntoView({ behavior:'smooth', block:'center' });
+      // Po skanowaniu od razu ustawiamy kursor na pierwszym brakującym polu.
+      // Dzięki temu telefon nie kończy tylko na wyszukaniu produktu.
+      row?.querySelector('input:not([type="file"])')?.focus({ preventScroll:true });
+    });
   }
   open.addEventListener('click', () => { if (search) search.value = ''; searchText = ''; if (searchStatus) searchStatus.hidden = true; render(); dialog.showModal(); });
   ['closeQuickFill', 'closeQuickFillBottom'].forEach(id => document.querySelector(`#${id}`).addEventListener('click', () => dialog.close()));

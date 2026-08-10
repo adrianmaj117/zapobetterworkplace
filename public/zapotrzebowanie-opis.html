@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#146b52">
+  <title>Zapotrzebowanie z opisu | ZapoBetterWorkPlace</title>
+  <link rel="icon" type="image/png" href="assets/daily-fruits-logo.png">
+  <link rel="stylesheet" href="description-demand-page.css?v=1">
+</head>
+<body class="description-demand-page">
+  <header class="review-topbar">
+    <a class="review-brand" href="magazyn.html"><img src="assets/daily-fruits-logo.png" alt="Daily Fruits"><b>ZapoBetterWorkPlace</b></a>
+    <a class="review-back" href="magazyn.html">← Wróć do magazynu</a>
+  </header>
+  <main class="review-shell">
+    <section class="review-hero">
+      <p>PLANOWANIE ZAPOTRZEBOWANIA</p>
+      <h1>Zapotrzebowanie z opisu</h1>
+      <span>Wklej listę. Następnie sprawdź dopasowania na czytelnych kartach — przed odjęciem stanów.</span>
+    </section>
+
+    <section class="paste-card" aria-labelledby="paste-title">
+      <div><h2 id="paste-title">Wklej opis zapotrzebowania</h2><p>Każdy wiersz zostanie odczytany osobno. Kanapki z Katowic są automatycznie pomijane.</p></div>
+      <label class="paste-textarea"><span>Lista produktów i ilości</span><textarea id="sourceText" rows="10" placeholder="Np.&#10;Orzech laskowy 65 g Hebar — 12 szt.&#10;Sok jabłko 330 ml, Sady Wincenta — 24 szt."></textarea></label>
+      <div class="paste-actions"><label>Data zapotrzebowania<input id="demandDate" type="date" required></label><button id="prepareDemand" type="button">Przygotuj porównanie →</button></div>
+      <p id="parseStatus" class="parse-status" aria-live="polite">Wklej opis, aby rozpocząć.</p>
+    </section>
+
+    <section id="reviewSection" class="review-section" hidden>
+      <div class="review-heading"><div><p>WERYFIKACJA</p><h2>Pozycje z opisu</h2><span>Wybierz właściwy produkt, sprawdź ilość i zatwierdź całość dopiero na dole.</span></div><button id="addReviewRow" type="button" class="secondary-action">＋ Dodaj pozycję</button></div>
+      <div id="reviewRows" class="review-rows"></div>
+      <section id="shortagePanel" class="shortage-panel" hidden></section>
+      <section class="review-confirmation">
+        <div><h2>Gotowe do zatwierdzenia?</h2><p>Stany zostaną odjęte, a braki trafią do listy zakupów.</p></div>
+        <label>Hasło zatwierdzające<input id="approvalPassword" type="password" inputmode="numeric" placeholder="Wpisz hasło"></label>
+        <button id="applyDemand" type="button">✓ Zatwierdź i odejmij</button>
+      </section>
+    </section>
+  </main>
+  <script src="description-demand-page.js?v=1" defer></script>
+</body>
+</html>
