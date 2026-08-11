@@ -20,7 +20,7 @@
   <link rel="stylesheet" href="batches-view.css">
   <link rel="stylesheet" href="inventory-overview.css">
   <link rel="stylesheet" href="dark-mode.css">
-  <link rel="stylesheet" href="delivery-workflow.css">
+  <link rel="stylesheet" href="delivery-workflow.css?v=2">
   <link rel="stylesheet" href="shopping-workflow.css">
   <link rel="stylesheet" href="user-panel.css">
   <link rel="stylesheet" href="game-link.css">
@@ -160,6 +160,16 @@
         <label>Data przyjęcia<input id="editReceived" type="date"></label>
         <label>Data ważności<input id="editExpiry" type="date"></label>
       </div>
+      <section class="product-barcode-config">
+        <div class="product-barcode-config-head"><div><h3>Kody kreskowe i opakowania</h3><p>Dodaj kod pojedynczej sztuki, zgrzewki lub kartonu. Każdy kod może mieć własną liczbę sztuk.</p></div></div>
+        <div id="editBarcodePackages" class="barcode-package-list"></div>
+        <div class="barcode-package-form">
+          <label>Kod opakowania<input id="packageBarcode" inputmode="numeric" autocomplete="off" placeholder="Zeskanuj lub wpisz kod"><button type="button" class="scan-barcode-button" data-scan-barcode-for="packageBarcode">▥ Skanuj kod</button></label>
+          <label>Ile sztuk?<input id="packageMultiplier" type="number" min="0.001" step="any" value="1"></label>
+          <label>Nazwa opakowania<input id="packageName" maxlength="100" placeholder="np. karton 24 szt."></label>
+          <button type="button" id="addPackageBarcode" class="button ghost">Dodaj kod</button>
+        </div>
+      </section>
       <div class="form-actions"><button type="button" id="cancelEdit" class="button ghost">Anuluj</button><button type="submit" class="button primary">Zapisz zmiany</button></div>
     </form>
   </dialog>
@@ -370,7 +380,7 @@
   <script src="product-detail.js"></script>
   <script src="purchases.js"></script>
   <script src="https://unpkg.com/@zxing/browser@0.1.5"></script>
-  <script src="barcode.js"></script>
+  <script src="barcode.js?v=2"></script>
   <script src="add-delivery-scan.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
   <script>
@@ -650,8 +660,11 @@
       <div class="form-grid delivery-manual-grid">
         <label>Kategoria<input id="deliveryManualCategory" list="deliveryCategoryOptions" required placeholder="np. Nabiał"></label>
         <label>Podkategoria / firma<input id="deliveryManualBrand" list="deliveryBrandOptions" placeholder="np. Mlekovita"></label>
-        <label>Nazwa produktu<input id="deliveryManualName" required placeholder="np. Jogurt naturalny"></label>
+        <label>Nazwa produktu<input id="deliveryManualName" required autocomplete="off" placeholder="Zacznij pisać, np. Jogurt naturalny"></label>
+        <div id="deliveryManualSuggestions" class="delivery-manual-suggestions full" hidden></div>
         <label>Kod kreskowy <small>(opcjonalnie)</small><input id="deliveryManualBarcode" inputmode="numeric" autocomplete="off" placeholder="np. 590…"></label>
+        <label>Nazwa opakowania <small>(opcjonalnie)</small><input id="deliveryManualPackageName" maxlength="100" placeholder="np. karton 24 szt."></label>
+        <label>Mnożnik opakowania<input id="deliveryManualMultiplier" type="number" min="0.001" step="any" value="1"></label>
         <label>Wartość gramatury<input id="deliveryManualWeightValue" type="number" min="0" step="any" placeholder="np. 200"></label>
         <label>Gramatura<input id="deliveryManualWeightUnit" list="deliveryWeightUnitOptions" placeholder="g, kg, ml lub l"></label>
         <label>Ilość<input id="deliveryManualQuantity" type="number" min="0.001" step="any" required></label>
@@ -710,17 +723,18 @@
   <script src="history.js" defer></script>
   <script src="inventory-overview.js" defer></script>
   <script src="manual-demand.js" defer></script>
-  <script src="description-demand.js?v=3" defer></script>
-  <script src="description-demand-redirect.js?v=1" defer></script>
-  <script src="shopping-workflow.js?v=3" defer></script>
+  <script src="description-demand.js?v=4" defer></script>
+  <script src="description-demand-redirect.js?v=2" defer></script>
+  <script src="shopping-workflow.js?v=5" defer></script>
   <script src="demand-menu.js" defer></script>
   <script src="fruit-category.js" defer></script>
   <script src="users.js" defer></script>
-  <script src="delivery.js" defer></script>
+  <script src="delivery.js?v=2" defer></script>
+  <script src="product-barcodes.js?v=1" defer></script>
   <script src="user-panel.js" defer></script>
   <script src="loading-indicator.js" defer></script>
   <script src="youtube.js" defer></script>
-  <script src="quick-fill.js?v=3" defer></script>
+  <script src="quick-fill.js?v=4" defer></script>
   <script src="notifications.js" defer></script>
   <script src="expired-products.js" defer></script>
 </body>

@@ -67,6 +67,22 @@ if (!db.prepare("PRAGMA table_info(products)").all().some(column => column.name 
   db.exec('ALTER TABLE products ADD COLUMN barcode TEXT');
 }
 
+// Jeden produkt może mieć kilka kodów: pojedynczej sztuki, zgrzewki lub kartonu.
+// Pierwotne pole products.barcode zostaje bez zmian jako kod pojedynczego produktu.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS product_barcodes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_id INTEGER NOT NULL,
+    barcode TEXT NOT NULL UNIQUE,
+    quantity_multiplier REAL NOT NULL DEFAULT 1 CHECK(quantity_multiplier > 0),
+    package_name TEXT NOT NULL DEFAULT 'Sztuka',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(product_id) REFERENCES products(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_product_barcodes_product ON product_barcodes(product_id);
+`);
+
 // Kod potwierdzony dla dokładnego wariantu: Sante FIT kakaowe 50 g.
 // Uzupełniamy go tylko wtedy, gdy przy produkcie nie zapisano jeszcze kodu.
 db.prepare(`UPDATE products SET barcode=?, updated_at=CURRENT_TIMESTAMP
@@ -186,7 +202,22 @@ db.exec(`
     FOREIGN KEY(delivery_id) REFERENCES deliveries(id) ON DELETE CASCADE,
     FOREIGN KEY(product_id) REFERENCES products(id) ON DELETE RESTRICT
   );
+  CREATE TABLE IF NOT EXISTS delivery_scan_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    delivery_id INTEGER NOT NULL,
+    product_id INTEGER NOT NULL,
+    barcode TEXT NOT NULL DEFAULT '',
+    package_name TEXT NOT NULL DEFAULT 'Sztuka',
+    quantity REAL NOT NULL CHECK(quantity > 0),
+    scanned_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(delivery_id) REFERENCES deliveries(id) ON DELETE CASCADE,
+    FOREIGN KEY(product_id) REFERENCES products(id) ON DELETE RESTRICT
+  );
+  CREATE INDEX IF NOT EXISTS idx_delivery_scan_events_delivery ON delivery_scan_events(delivery_id, id);
 `);
+if (!db.prepare('PRAGMA table_info(deliveries)').all().some(column => column.name === 'accepted_by_user_id')) {
+  db.exec('ALTER TABLE deliveries ADD COLUMN accepted_by_user_id INTEGER');
+}
 db.exec(`
   CREATE TABLE IF NOT EXISTS demand_runs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -385,7 +416,7 @@ function syncSystemNotifications() {
   const today = new Date().toISOString().slice(0, 10);
   const end = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
   const add = db.prepare('INSERT OR IGNORE INTO notifications (type, title, message, entity_key) VALUES (?, ?, ?, ?)');
-  for (const item of db.prepare("SELECT id,name,expiration_date FROM products WHERE expiration_date IS NOT NULL AND expiration_date<>'' AND expiration_date<=?").all(end)) {
+  for (const item of db.prepare("SELECT id,name,expiration_date FROM products WHERE quantity>0 AND expiration_date IS NOT NULL AND expiration_date<>'' AND expiration_date<=?").all(end)) {
     const expired = item.expiration_date < today;
     add.run(expired ? 'warning' : 'expiry', expired ? 'Produkt po terminie' : 'Zbliża się termin ważności', `${item.name} — termin: ${item.expiration_date}`, `expiry:${item.id}:${item.expiration_date}`);
   }
@@ -845,17 +876,17 @@ app.get('/api/dashboard', (req, res) => {
       COUNT(*) AS totalProducts,
       COALESCE(SUM(quantity), 0) AS totalUnits,
       SUM(CASE WHEN quantity <= min_quantity THEN 1 ELSE 0 END) AS lowStock,
-      SUM(CASE WHEN expiration_date IS NOT NULL AND expiration_date < ? THEN 1 ELSE 0 END) AS expired,
-      SUM(CASE WHEN expiration_date IS NOT NULL AND expiration_date >= ? AND expiration_date <= ? THEN 1 ELSE 0 END) AS expiringSoon
+      SUM(CASE WHEN quantity > 0 AND expiration_date IS NOT NULL AND expiration_date < ? THEN 1 ELSE 0 END) AS expired,
+      SUM(CASE WHEN quantity > 0 AND expiration_date IS NOT NULL AND expiration_date >= ? AND expiration_date <= ? THEN 1 ELSE 0 END) AS expiringSoon
     FROM products
   `).get(today, today, threshold);
   const alerts = db.prepare(`
     SELECT * FROM products
-    WHERE quantity <= min_quantity OR (expiration_date IS NOT NULL AND expiration_date <= ?)
+    WHERE quantity <= min_quantity OR (quantity > 0 AND expiration_date IS NOT NULL AND expiration_date <= ?)
     ORDER BY CASE WHEN expiration_date IS NULL THEN 1 ELSE 0 END, expiration_date ASC
     LIMIT 8
   `).all(threshold);
-  const nearestExpiry = db.prepare(`SELECT * FROM products WHERE expiration_date IS NOT NULL AND expiration_date >= ? ORDER BY expiration_date ASC LIMIT 1`).get(today);
+  const nearestExpiry = db.prepare(`SELECT * FROM products WHERE quantity > 0 AND expiration_date IS NOT NULL AND expiration_date >= ? ORDER BY expiration_date ASC LIMIT 1`).get(today);
   res.json({ ...summary, alerts, nearestExpiry, today, threshold });
 });
 
@@ -883,7 +914,8 @@ app.get('/api/products/expired', (req, res) => {
 });
 
 function deliveryById(id) {
-  const delivery = db.prepare('SELECT * FROM deliveries WHERE id=?').get(id);
+  const delivery = db.prepare(`SELECT d.*, u.display_name AS accepted_by_name
+    FROM deliveries d LEFT JOIN users u ON u.id=d.accepted_by_user_id WHERE d.id=?`).get(id);
   if (!delivery) return null;
   delivery.items = db.prepare(`
     SELECT di.id, di.product_id, di.quantity, di.expiration_date,
@@ -893,6 +925,9 @@ function deliveryById(id) {
     WHERE di.delivery_id=?
     ORDER BY di.id ASC
   `).all(id);
+  delivery.scan_events = db.prepare(`SELECT e.*, p.name, p.unit
+    FROM delivery_scan_events e JOIN products p ON p.id=e.product_id
+    WHERE e.delivery_id=? ORDER BY e.id ASC`).all(id);
   return delivery;
 }
 
@@ -904,6 +939,83 @@ app.get('/api/deliveries', allow('deliveryHistory'), (req, res) => {
 function cleanBarcode(value) {
   return String(value || '').trim().replace(/[^0-9A-Za-z-]/g, '').toUpperCase();
 }
+
+function barcodeBinding(value) {
+  const barcode = cleanBarcode(value);
+  if (!barcode) return null;
+  const configured = db.prepare(`SELECT b.id AS barcode_id, b.barcode, b.quantity_multiplier, b.package_name,
+      p.* FROM product_barcodes b JOIN products p ON p.id=b.product_id WHERE b.barcode=?`).get(barcode);
+  if (configured) return { ...configured, primary: false };
+  const product = db.prepare('SELECT * FROM products WHERE barcode=?').get(barcode);
+  return product ? { ...product, barcode_id: null, barcode, quantity_multiplier: 1, package_name: 'Sztuka', primary: true } : null;
+}
+
+function barcodeBelongsToAnotherProduct(value, productId, barcodeId = null) {
+  const barcode = cleanBarcode(value);
+  if (!barcode) return false;
+  const primary = db.prepare('SELECT id FROM products WHERE barcode=? AND id<>?').get(barcode, productId);
+  if (primary) return true;
+  const configured = db.prepare('SELECT id FROM product_barcodes WHERE barcode=? AND product_id<>?').get(barcode, productId);
+  if (configured) return true;
+  if (!barcodeId) return Boolean(db.prepare('SELECT id FROM product_barcodes WHERE barcode=? AND product_id=?').get(barcode, productId));
+  return Boolean(db.prepare('SELECT id FROM product_barcodes WHERE barcode=? AND id<>?').get(barcode, barcodeId));
+}
+
+function barcodePackage(value) {
+  const barcode = cleanBarcode(value?.barcode);
+  const multiplier = Number(value?.quantity_multiplier ?? value?.quantityMultiplier ?? 1);
+  const packageName = String(value?.package_name ?? value?.packageName ?? 'Sztuka').trim().slice(0, 100) || 'Sztuka';
+  if (!barcode) throw new Error('Wpisz kod kreskowy.');
+  if (!Number.isFinite(multiplier) || multiplier <= 0) throw new Error('Podaj prawidłową liczbę sztuk w opakowaniu.');
+  return { barcode, multiplier, packageName };
+}
+
+app.get('/api/barcodes/:barcode', (req, res) => {
+  const binding = barcodeBinding(req.params.barcode);
+  if (!binding) return res.status(404).json({ error: 'Ten kod nie jest jeszcze przypisany do produktu.' });
+  res.json(binding);
+});
+
+app.get('/api/products/:id/barcodes', (req, res) => {
+  const product = productById(Number(req.params.id));
+  if (!product) return res.status(404).json({ error: 'Nie znaleziono produktu.' });
+  const codes = db.prepare(`SELECT id, barcode, quantity_multiplier, package_name, created_at, updated_at
+    FROM product_barcodes WHERE product_id=? ORDER BY quantity_multiplier ASC, id ASC`).all(product.id);
+  if (product.barcode) codes.unshift({ id:null, barcode:product.barcode, quantity_multiplier:1, package_name:'Sztuka', primary:true });
+  res.json(codes);
+});
+
+app.post('/api/products/:id/barcodes', (req, res) => {
+  const product = productById(Number(req.params.id));
+  if (!product) return res.status(404).json({ error: 'Nie znaleziono produktu.' });
+  try {
+    const code = barcodePackage(req.body);
+    if (barcodeBelongsToAnotherProduct(code.barcode, product.id)) return res.status(409).json({ error: 'Ten kod jest już przypisany do innego produktu albo opakowania.' });
+    const existingPrimary = cleanBarcode(product.barcode) === code.barcode;
+    if (existingPrimary) return res.status(409).json({ error: 'To jest już główny kod pojedynczej sztuki.' });
+    const result = db.prepare(`INSERT INTO product_barcodes (product_id, barcode, quantity_multiplier, package_name, updated_at)
+      VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)`).run(product.id, code.barcode, code.multiplier, code.packageName);
+    res.status(201).json(db.prepare('SELECT * FROM product_barcodes WHERE id=?').get(result.lastInsertRowid));
+  } catch (error) { res.status(400).json({ error: error.message || 'Nie udało się zapisać kodu.' }); }
+});
+
+app.put('/api/product-barcodes/:id', (req, res) => {
+  const existing = db.prepare('SELECT * FROM product_barcodes WHERE id=?').get(Number(req.params.id));
+  if (!existing) return res.status(404).json({ error: 'Nie znaleziono kodu.' });
+  try {
+    const code = barcodePackage(req.body);
+    if (barcodeBelongsToAnotherProduct(code.barcode, existing.product_id, existing.id)) return res.status(409).json({ error: 'Ten kod jest już przypisany do innego produktu albo opakowania.' });
+    db.prepare(`UPDATE product_barcodes SET barcode=?, quantity_multiplier=?, package_name=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`)
+      .run(code.barcode, code.multiplier, code.packageName, existing.id);
+    res.json(db.prepare('SELECT * FROM product_barcodes WHERE id=?').get(existing.id));
+  } catch (error) { res.status(400).json({ error: error.message || 'Nie udało się zmienić kodu.' }); }
+});
+
+app.delete('/api/product-barcodes/:id', (req, res) => {
+  const result = db.prepare('DELETE FROM product_barcodes WHERE id=?').run(Number(req.params.id));
+  if (!result.changes) return res.status(404).json({ error: 'Nie znaleziono kodu.' });
+  res.status(204).end();
+});
 
 function deliveryDraft(value) {
   if (!value || typeof value !== 'object') return null;
@@ -935,7 +1047,7 @@ function deliveryDraft(value) {
 }
 
 function createProductFromDeliveryDraft(draft) {
-  if (draft.barcode && db.prepare('SELECT id FROM products WHERE barcode=?').get(draft.barcode)) {
+  if (draft.barcode && (db.prepare('SELECT id FROM products WHERE barcode=?').get(draft.barcode) || db.prepare('SELECT id FROM product_barcodes WHERE barcode=?').get(draft.barcode))) {
     throw new Error('Ten kod kreskowy jest już przypisany do innego artykułu. Zeskanuj go ponownie, aby wybrać istniejący produkt.');
   }
   const grams = draft.weight_value && draft.weight_unit === 'g' ? draft.weight_value
@@ -1035,15 +1147,22 @@ app.post('/api/deliveries', (req, res) => {
   }).filter(item => Number.isFinite(item.quantity) && item.quantity > 0 && (item.product_id || item.new_product));
   if (!supplier) return res.status(400).json({ error: 'Podaj nazwę dostawy lub dostawcy.' });
   if (!items.length) return res.status(400).json({ error: 'Dodaj co najmniej jeden artykuł do dostawy.' });
+  const scanEvents = (Array.isArray(req.body?.scan_events) ? req.body.scan_events : []).map(raw => ({
+    product_id: productIdFrom(raw.product_id), barcode: cleanBarcode(raw.barcode),
+    package_name: String(raw.package_name || raw.packageName || 'Sztuka').trim().slice(0, 100) || 'Sztuka',
+    quantity: Number(raw.quantity)
+  })).filter(event => event.product_id && event.barcode && Number.isFinite(event.quantity) && event.quantity > 0);
 
   db.exec('BEGIN');
   try {
-    const createDelivery = db.prepare('INSERT INTO deliveries (supplier, received_date, note) VALUES (?, ?, ?)');
-    const delivery = createDelivery.run(supplier, received, note);
+    const createDelivery = db.prepare('INSERT INTO deliveries (supplier, received_date, note, accepted_by_user_id) VALUES (?, ?, ?, ?)');
+    const delivery = createDelivery.run(supplier, received, note, req.user?.id || null);
     const addItem = db.prepare('INSERT INTO delivery_items (delivery_id, product_id, quantity, expiration_date) VALUES (?, ?, ?, ?)');
     const updateProduct = db.prepare('UPDATE products SET quantity=quantity+?, received_date=?, updated_at=CURRENT_TIMESTAMP WHERE id=?');
     const addBatch = db.prepare('INSERT INTO product_batches (product_id, quantity, expiration_date, received_date) VALUES (?, ?, ?, ?)');
     const addMovement = db.prepare("INSERT INTO movements (product_id, type, quantity, note) VALUES (?, 'add', ?, ?)");
+    const addScanEvent = db.prepare(`INSERT INTO delivery_scan_events (delivery_id, product_id, barcode, package_name, quantity)
+      VALUES (?, ?, ?, ?, ?)`);
     const touched = new Set();
     for (const item of items) {
       const product = item.product_id ? productById(item.product_id) : createProductFromDeliveryDraft(item.new_product);
@@ -1057,6 +1176,7 @@ app.post('/api/deliveries', (req, res) => {
       }
       touched.add(product.id);
     }
+    scanEvents.forEach(event => addScanEvent.run(delivery.lastInsertRowid, event.product_id, event.barcode, event.package_name, event.quantity));
     touched.forEach(id => syncProductExpiryFromBatches(id));
     db.exec('COMMIT');
     res.status(201).json(deliveryById(Number(delivery.lastInsertRowid)));
@@ -1428,7 +1548,7 @@ app.post('/api/products', (req, res) => {
     return res.status(400).json({ error: 'Podaj nazwę oraz prawidłowe ilości.' });
   }
   const normalizedBarcode = String(barcode || '').trim().replace(/[^0-9A-Za-z-]/g, '').toUpperCase();
-  if (normalizedBarcode && db.prepare('SELECT id FROM products WHERE barcode=?').get(normalizedBarcode)) return res.status(409).json({ error: 'Ten kod kreskowy jest już przypisany do innego artykułu.' });
+  if (normalizedBarcode && (db.prepare('SELECT id FROM products WHERE barcode=?').get(normalizedBarcode) || db.prepare('SELECT id FROM product_barcodes WHERE barcode=?').get(normalizedBarcode))) return res.status(409).json({ error: 'Ten kod kreskowy jest już przypisany do innego artykułu albo opakowania.' });
   const result = db.prepare(`INSERT INTO products (name, category, brand, unit, quantity, min_quantity, weight_value, weight_unit, expiration_date, received_date, image_data, notes, barcode, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`).run(name.trim(), canonicalCategory(category), brand.trim(), unit.trim() || 'szt.', quantity, min_quantity, validNumber(weight_value) && weight_value > 0 ? weight_value : null, weight_unit || null, parseExpiration(expiration_date), parseExpiration(received_date), image_data || null, notes.trim(), normalizedBarcode || null);
   if (quantity > 0) {
@@ -1447,7 +1567,7 @@ app.put('/api/products/:id', (req, res) => {
   if (!name || !name.trim() || !validNumber(min_quantity) || min_quantity < 0) return res.status(400).json({ error: 'Sprawdź wymagane pola.' });
   if (!validNumber(quantity) || quantity < 0) return res.status(400).json({ error: 'Podaj prawidłową ilość.' });
   const normalizedBarcode = String(barcode || '').trim().replace(/[^0-9A-Za-z-]/g, '').toUpperCase();
-  if (normalizedBarcode && db.prepare('SELECT id FROM products WHERE barcode=? AND id<>?').get(normalizedBarcode, id)) return res.status(409).json({ error: 'Ten kod kreskowy jest już przypisany do innego artykułu.' });
+  if (normalizedBarcode && barcodeBelongsToAnotherProduct(normalizedBarcode, id)) return res.status(409).json({ error: 'Ten kod kreskowy jest już przypisany do innego artykułu albo opakowania.' });
   // Pusta data z formularza nie może skasować wpisanego wcześniej terminu,
   // dopóki produkt nadal znajduje się na stanie. Termin znika dopiero przy stanie 0.
   const parsedExpiration = parseExpiration(expiration_date) || (Number(quantity) > 0 ? existing.expiration_date : null);

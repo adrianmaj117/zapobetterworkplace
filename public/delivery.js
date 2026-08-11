@@ -22,7 +22,10 @@
   };
   const unique = values => [...new Set(values.filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pl'));
   let deliveryItems = [];
+  let scanEvents = [];
   let pendingProduct = null;
+  let pendingScan = null;
+  let manualSelectedProductId = 0;
   const draftKey = 'zapo-delivery-draft-v1';
   let draftRestored = false;
 
@@ -32,9 +35,9 @@
     const note = document.querySelector('#deliveryNote').value;
     if (!supplier.trim() && !note.trim() && !deliveryItems.length) { sessionStorage.removeItem(draftKey); return; }
     const items = deliveryItems.map(item => ({ product:item.product, draft:item.draft || null, quantity:item.quantity, expiration_date:item.expiration_date, image_data:item.image_data || '' }));
-    try { sessionStorage.setItem(draftKey, JSON.stringify({ supplier, received_date, note, items })); }
+    try { sessionStorage.setItem(draftKey, JSON.stringify({ supplier, received_date, note, items, scanEvents })); }
     catch (_) {
-      try { sessionStorage.setItem(draftKey, JSON.stringify({ supplier, received_date, note, items:items.map(item => ({ ...item, image_data:'', product:{ ...item.product, image_data:'' }, draft:item.draft ? { ...item.draft, image_data:'' } : null })) })); } catch (_) {}
+      try { sessionStorage.setItem(draftKey, JSON.stringify({ supplier, received_date, note, scanEvents, items:items.map(item => ({ ...item, image_data:'', product:{ ...item.product, image_data:'' }, draft:item.draft ? { ...item.draft, image_data:'' } : null })) })); } catch (_) {}
     }
   }
   function clearDraft() { sessionStorage.removeItem(draftKey); draftRestored = false; }
@@ -48,6 +51,7 @@
       document.querySelector('#deliveryReceived').value = draft.received_date || today();
       document.querySelector('#deliveryNote').value = draft.note || '';
       deliveryItems = Array.isArray(draft.items) ? draft.items.filter(item => item?.product).map(item => ({ ...item, product:all.find(product => Number(product.id) === Number(item.product.id)) || item.product })) : [];
+      scanEvents = Array.isArray(draft.scanEvents) ? draft.scanEvents : [];
       return true;
     } catch (_) { clearDraft(); return false; }
   }
@@ -66,16 +70,82 @@
     setOptions('deliveryBrandOptions', all.filter(product => !category || canonicalCategory(product.category) === category).map(productBrand));
   }
 
+  function renderManualProductSuggestions() {
+    const box = document.querySelector('#deliveryManualSuggestions');
+    const input = document.querySelector('#deliveryManualName');
+    const query = comparable(input.value);
+    if (query.length < 2) { box.hidden = true; box.innerHTML = ''; return; }
+    const words = query.split(' ').filter(Boolean);
+    const matches = all.map(product => {
+      const text = comparable(`${product.name} ${product.brand} ${product.weight_value || ''} ${product.weight_unit || ''}`);
+      const score = (text.includes(query) ? 50 : 0) + words.reduce((sum, word) => sum + (text.includes(word) ? 8 : 0), 0);
+      return { product, score };
+    }).filter(entry => entry.score >= 8).sort((a, b) => b.score - a.score || a.product.name.localeCompare(b.product.name, 'pl')).slice(0, 5);
+    if (!matches.length) { box.hidden = true; box.innerHTML = ''; return; }
+    box.hidden = false;
+    box.innerHTML = `<p>Podobne produkty z magazynu — wybierz, aby dodać do tej dostawy:</p>${matches.map(({ product }) => `<button type="button" class="delivery-manual-suggestion" data-manual-product="${product.id}"><span><b>${escapeHtml(product.name)}</b><small>${escapeHtml(product.category)} · ${escapeHtml(productBrand(product))} · ${escapeHtml(productWeight(product))} · stan: ${product.quantity} ${escapeHtml(product.unit)}</small></span><span>Wybierz</span></button>`).join('')}`;
+  }
+
+  function chooseManualProduct(product) {
+    if (!product) return;
+    manualSelectedProductId = Number(product.id);
+    document.querySelector('#deliveryManualName').value = product.name;
+    document.querySelector('#deliveryManualCategory').value = product.category;
+    document.querySelector('#deliveryManualBrand').value = product.brand || '';
+    document.querySelector('#deliveryManualWeightValue').value = product.weight_value || '';
+    document.querySelector('#deliveryManualWeightUnit').value = product.weight_unit || '';
+    document.querySelector('#deliveryManualUnit').value = product.unit || 'szt.';
+    if (!document.querySelector('#deliveryManualBarcode').value.trim()) document.querySelector('#deliveryManualBarcode').value = product.barcode || '';
+    document.querySelector('#deliveryManualSuggestions').hidden = true;
+    fillManualSuggestions();
+  }
+
+  function addToDelivery(item) {
+    const sameProduct = entry => !entry.draft && !item.draft && Number(entry.product.id) === Number(item.product.id)
+      && String(entry.expiration_date || '') === String(item.expiration_date || '');
+    const existing = deliveryItems.find(sameProduct);
+    if (existing) existing.quantity = Number(existing.quantity) + Number(item.quantity);
+    else deliveryItems.push(item);
+  }
+
+  function addScanEvent(product, scan, quantity) {
+    if (!scan?.barcode) return;
+    scanEvents.push({
+      product_id: product.id,
+      product_name: product.name,
+      barcode: scan.barcode,
+      package_name: scan.package_name || 'Sztuka',
+      quantity: Number(quantity),
+      time: new Date().toLocaleTimeString('pl-PL', { hour:'2-digit', minute:'2-digit', second:'2-digit' })
+    });
+  }
+
+  // Pierwszy skan produktu pozwala podać termin partii. Gdy w bieżącej dostawie
+  // istnieje już tylko jedna partia tego produktu, następne skany są natychmiast
+  // sumowane do niej — bez dodatkowego klikania.
+  function addRepeatedScan(product, scan) {
+    if (!scan?.barcode) return false;
+    const productLines = deliveryItems.filter(entry => !entry.draft && Number(entry.product.id) === Number(product.id));
+    if (productLines.length !== 1) return false;
+    const quantity = Number(scan.quantity_multiplier || 1);
+    productLines[0].quantity = Number(productLines[0].quantity || 0) + quantity;
+    addScanEvent(product, scan, quantity);
+    renderLines();
+    return true;
+  }
+
   function renderLines() {
     const confirm = document.querySelector('#confirmDelivery');
     confirm.disabled = !deliveryItems.length;
-    linesBox.innerHTML = deliveryItems.length ? deliveryItems.map((item, index) => `
+    const total = deliveryItems.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+    const scanHistory = scanEvents.length ? `<details class="delivery-scan-history"><summary>Historia skanów (${scanEvents.length})</summary><ul>${scanEvents.map(event => `<li>${escapeHtml(event.time || '')} · ${escapeHtml(event.product_name || '')} · ${escapeHtml(event.package_name || 'Sztuka')} · <b>+${Number(event.quantity)}</b></li>`).join('')}</ul></details>` : '';
+    linesBox.innerHTML = deliveryItems.length ? `<div class="delivery-lines-summary"><b>Różne produkty: ${deliveryItems.length}</b><b>Łącznie: ${total}</b></div>${deliveryItems.map((item, index) => `
       <article class="delivery-line">
         <img src="${item.image_data || defaultImage}" alt="${escapeHtml(item.product.name)}">
         <div><p>${escapeHtml(item.product.category)} · ${escapeHtml(productBrand(item.product))} · ${escapeHtml(productWeight(item.product))}${item.draft ? '<span class="delivery-draft">nowy</span>' : ''}</p><h4>${escapeHtml(item.product.name)}</h4><small>Termin: <b>${formatDate(item.expiration_date)}</b></small></div>
-        <strong>${item.quantity}<small>${escapeHtml(item.product.unit)}</small></strong>
+        <div class="delivery-line-controls"><button type="button" class="delivery-line-adjust" data-delivery-adjust="-1" data-delivery-index="${index}" aria-label="Odejmij jedną sztukę">−</button><input class="delivery-line-quantity" data-delivery-quantity="${index}" type="number" min="0.001" step="any" value="${item.quantity}" aria-label="Ilość ${escapeHtml(item.product.name)}"><button type="button" class="delivery-line-adjust" data-delivery-adjust="1" data-delivery-index="${index}" aria-label="Dodaj jedną sztukę">+</button></div>
         <button type="button" class="delivery-line-remove" data-delivery-remove="${index}" aria-label="Usuń z dostawy">×</button>
-      </article>`).join('') : '<div class="delivery-empty"><b>Brak produktów w tej dostawie.</b><span>Zeskanuj kod lub dodaj pozycję ręcznie — magazyn jeszcze się nie zmieni.</span></div>';
+      </article>`).join('')}${scanHistory}` : '<div class="delivery-empty"><b>Brak produktów w tej dostawie.</b><span>Zeskanuj kod lub dodaj pozycję ręcznie — magazyn jeszcze się nie zmieni.</span></div>';
     saveDraft();
   }
 
@@ -87,6 +157,7 @@
   function openDelivery() {
     if (!restoreDraft()) {
       deliveryItems = [];
+      scanEvents = [];
       document.querySelector('#deliveryForm').reset();
       document.querySelector('#deliveryReceived').value = today();
     }
@@ -102,11 +173,13 @@
     return image;
   }
 
-  async function showDeliveryItem(product) {
+  async function showDeliveryItem(product, scan = null) {
     pendingProduct = product;
+    pendingScan = scan && typeof scan === 'object' ? scan : null;
     pendingProduct.delivery_image = await productImage(product);
-    document.querySelector('#deliveryItemPreview').innerHTML = `<img src="${pendingProduct.delivery_image || defaultImage}" alt="${escapeHtml(product.name)}"><div><p>${escapeHtml(product.category)} · ${escapeHtml(productBrand(product))} · ${escapeHtml(productWeight(product))}</p><h3>${escapeHtml(product.name)}</h3><small>Obecny stan: <b>${product.quantity} ${escapeHtml(product.unit)}</b></small></div>`;
-    document.querySelector('#deliveryItemQuantity').value = '';
+    const packageLabel = pendingScan?.package_name ? ` · ${pendingScan.package_name}` : '';
+    document.querySelector('#deliveryItemPreview').innerHTML = `<img src="${pendingProduct.delivery_image || defaultImage}" alt="${escapeHtml(product.name)}"><div><p>${escapeHtml(product.category)} · ${escapeHtml(productBrand(product))} · ${escapeHtml(productWeight(product))}${escapeHtml(packageLabel)}</p><h3>${escapeHtml(product.name)}</h3><small>Obecny stan: <b>${product.quantity} ${escapeHtml(product.unit)}</b>${pendingScan ? ` · zeskanowano: <b>+${Number(pendingScan.quantity_multiplier || 1)}</b>` : ''}</small></div>`;
+    document.querySelector('#deliveryItemQuantity').value = pendingScan?.quantity_multiplier || '';
     document.querySelector('#deliveryItemExpiry').value = product.expiration_date || '';
     itemDialog.showModal();
     document.querySelector('#deliveryItemQuantity').focus();
@@ -126,7 +199,9 @@
     if (!requireSupplier()) return;
     const form = document.querySelector('#deliveryManualItemForm');
     form.reset();
+    manualSelectedProductId = 0;
     document.querySelector('#deliveryManualBarcode').value = barcode || '';
+    document.querySelector('#deliveryManualMultiplier').value = '1';
     document.querySelector('#deliveryManualExpiry').value = '';
     fillManualSuggestions();
     manualDialog.showModal();
@@ -139,8 +214,9 @@
     try {
       const deliveries = await api('/api/deliveries');
       historyBox.innerHTML = deliveries.length ? deliveries.map(delivery => `<article class="delivery-history-card">
-        <header><div><p>DOSTAWA</p><h3>${escapeHtml(delivery.supplier)}</h3><small>Przyjęto: ${formatDate(delivery.received_date)}${delivery.note ? ` · ${escapeHtml(delivery.note)}` : ''}</small></div><b>${delivery.items.length} ${delivery.items.length === 1 ? 'produkt' : 'produktów'}</b></header>
+        <header><div><p>DOSTAWA</p><h3>${escapeHtml(delivery.supplier)}</h3><small>Przyjęto: ${formatDate(delivery.received_date)}${delivery.accepted_by_name ? ` · zatwierdził(a): ${escapeHtml(delivery.accepted_by_name)}` : ''}${delivery.note ? ` · ${escapeHtml(delivery.note)}` : ''}</small></div><b>${delivery.items.length} ${delivery.items.length === 1 ? 'produkt' : 'produktów'}</b></header>
         <div class="delivery-history-items">${delivery.items.map(item => `<button type="button" class="delivery-history-item" data-delivery-product="${item.product_id || ''}"><img src="${item.image_data || defaultImage}" alt=""><span><b>${escapeHtml(item.name || 'Usunięty produkt')}</b><small>${escapeHtml(item.category || '')} · ${escapeHtml(item.brand || 'Pozostałe')} · ${item.weight_value ? `${item.weight_value} ${escapeHtml(item.weight_unit)}` : 'bez gramatury'}</small><small>Termin: ${formatDate(item.expiration_date)}</small></span><strong>${item.quantity}<small>${escapeHtml(item.unit || 'szt.')}</small></strong></button>`).join('')}</div>
+        ${(delivery.scan_events || []).length ? `<details class="delivery-scan-history"><summary>Historia skanów (${delivery.scan_events.length})</summary><ul>${delivery.scan_events.map(event => `<li>${escapeHtml(event.scanned_at || '')} · ${escapeHtml(event.name || 'Produkt')} · ${escapeHtml(event.package_name || 'Sztuka')} · <b>+${Number(event.quantity)}</b></li>`).join('')}</ul></details>` : ''}
       </article>`).join('') : '<div class="delivery-empty"><b>Nie ma jeszcze zatwierdzonych dostaw.</b><span>Po pierwszym przyjęciu produktów pojawią się tutaj szczegóły.</span></div>';
     } catch (error) {
       historyBox.innerHTML = `<p class="delivery-empty">${escapeHtml(error.message)}</p>`;
@@ -155,7 +231,13 @@
       && String(product.weight_unit || '').toLowerCase() === String(weightUnit || '').toLowerCase();
   }
 
-  window.openGroupedDeliveryItem = showDeliveryItem;
+  window.openGroupedDeliveryItem = (product, scan) => {
+    if (addRepeatedScan(product, scan)) {
+      window.openBarcodeForGroupedDelivery?.();
+      return;
+    }
+    showDeliveryItem(product, scan);
+  };
   window.openManualDeliveryItem = openManualDeliveryItem;
   window.resumeGroupedDelivery = () => { if (!dialog.open) dialog.showModal(); };
   window.openDeliveryForProduct = id => {
@@ -177,17 +259,30 @@
   });
   document.querySelector('#manualDeliveryProduct').addEventListener('click', () => openManualDeliveryItem());
   document.querySelector('#deliveryManualCategory').addEventListener('input', fillManualSuggestions);
+  document.querySelector('#deliveryManualName').addEventListener('input', () => { manualSelectedProductId = 0; renderManualProductSuggestions(); });
+  document.querySelector('#deliveryManualMultiplier').addEventListener('input', event => {
+    if (document.querySelector('#deliveryManualBarcode').value.trim()) document.querySelector('#deliveryManualQuantity').value = event.target.value || '';
+  });
+  document.querySelector('#deliveryManualSuggestions').addEventListener('click', event => {
+    const button = event.target.closest('[data-manual-product]');
+    if (button) chooseManualProduct(all.find(product => Number(product.id) === Number(button.dataset.manualProduct)));
+  });
 
   document.querySelector('#deliveryItemForm').addEventListener('submit', event => {
     event.preventDefault();
     const quantity = Number(document.querySelector('#deliveryItemQuantity').value);
     const expiration = document.querySelector('#deliveryItemExpiry').value;
     if (!pendingProduct || !Number.isFinite(quantity) || quantity <= 0 || !expiration) return;
-    deliveryItems.push({ product: pendingProduct, image_data: pendingProduct.delivery_image || '', quantity, expiration_date: expiration });
+    const product = pendingProduct;
+    const scan = pendingScan;
+    addToDelivery({ product, image_data: product.delivery_image || '', quantity, expiration_date: expiration });
+    addScanEvent(product, scan, quantity);
     pendingProduct = null;
+    pendingScan = null;
     itemDialog.close();
     renderLines();
-    dialog.showModal();
+    if (scan?.barcode && window.openBarcodeForGroupedDelivery) window.openBarcodeForGroupedDelivery();
+    else dialog.showModal();
   });
 
   document.querySelector('#deliveryManualItemForm').addEventListener('submit', async event => {
@@ -198,20 +293,29 @@
     const barcode = document.querySelector('#deliveryManualBarcode').value.trim();
     const weightValue = Number(document.querySelector('#deliveryManualWeightValue').value || 0);
     const weightUnit = document.querySelector('#deliveryManualWeightUnit').value.trim().toLowerCase();
+    const multiplier = Number(document.querySelector('#deliveryManualMultiplier').value || 1);
+    const packageName = document.querySelector('#deliveryManualPackageName').value.trim() || 'Sztuka';
     const quantity = Number(document.querySelector('#deliveryManualQuantity').value);
     const unit = document.querySelector('#deliveryManualUnit').value;
     const expiration = document.querySelector('#deliveryManualExpiry').value;
-    if (!category || !name || !Number.isFinite(quantity) || quantity <= 0 || !expiration) return;
+    if (!category || !name || !Number.isFinite(quantity) || quantity <= 0 || !expiration || !Number.isFinite(multiplier) || multiplier <= 0) return;
     if (weightUnit && !['g', 'kg', 'ml', 'l'].includes(weightUnit)) return alert('Wybierz gramaturę: g, kg, ml albo l.');
-    const matching = all.find(product => isSameProduct(product, { name, category, brand, weightValue, weightUnit }));
+    const matching = all.find(product => Number(product.id) === Number(manualSelectedProductId)) || all.find(product => isSameProduct(product, { name, category, brand, weightValue, weightUnit }));
     const file = document.querySelector('#deliveryManualImage').files[0];
     const image = file ? await read(file) : '';
     if (matching) {
       const existingImage = image || await productImage(matching);
-      deliveryItems.push({ product: matching, image_data: existingImage, quantity, expiration_date: expiration });
+      if (barcode && comparable(barcode) !== comparable(matching.barcode || '')) {
+        const configured = await api(`/api/products/${matching.id}/barcodes`);
+        if (!configured.some(code => comparable(code.barcode) === comparable(barcode))) {
+          await api(`/api/products/${matching.id}/barcodes`, { method:'POST', body:JSON.stringify({ barcode, quantity_multiplier:multiplier, package_name:packageName }) });
+        }
+      }
+      addToDelivery({ product: matching, image_data: existingImage, quantity, expiration_date: expiration });
+      if (barcode) addScanEvent(matching, { barcode, package_name:packageName }, quantity);
     } else {
       const product = { name, category, brand, barcode, quantity: 0, unit, weight_value: weightValue || null, weight_unit: weightUnit || '', image_data: image };
-      deliveryItems.push({ product, draft: { name, category, brand, barcode, unit, weight_value: weightValue || null, weight_unit: weightUnit || '', image_data: image }, image_data: image, quantity, expiration_date: expiration });
+      addToDelivery({ product, draft: { name, category, brand, barcode, unit, weight_value: weightValue || null, weight_unit: weightUnit || '', image_data: image }, image_data: image, quantity, expiration_date: expiration });
     }
     manualDialog.close();
     renderLines();
@@ -220,8 +324,26 @@
 
   linesBox.addEventListener('click', event => {
     const button = event.target.closest('[data-delivery-remove]');
-    if (!button) return;
-    deliveryItems.splice(Number(button.dataset.deliveryRemove), 1);
+    if (button) {
+      deliveryItems.splice(Number(button.dataset.deliveryRemove), 1);
+      renderLines();
+      return;
+    }
+    const adjust = event.target.closest('[data-delivery-adjust]');
+    if (!adjust) return;
+    const index = Number(adjust.dataset.deliveryIndex);
+    const item = deliveryItems[index];
+    if (!item) return;
+    item.quantity = Math.max(0.001, Number(item.quantity || 0) + Number(adjust.dataset.deliveryAdjust || 0));
+    renderLines();
+  });
+  linesBox.addEventListener('change', event => {
+    const input = event.target.closest('[data-delivery-quantity]');
+    if (!input) return;
+    const item = deliveryItems[Number(input.dataset.deliveryQuantity)];
+    const quantity = Number(input.value);
+    if (!item || !Number.isFinite(quantity) || quantity <= 0) { renderLines(); return; }
+    item.quantity = quantity;
     renderLines();
   });
 
@@ -237,9 +359,11 @@
         supplier,
         received_date: document.querySelector('#deliveryReceived').value,
         note: document.querySelector('#deliveryNote').value,
-        items: deliveryItems.map(item => ({ product_id: item.draft ? null : item.product.id, new_product: item.draft || null, quantity: item.quantity, expiration_date: item.expiration_date }))
+        items: deliveryItems.map(item => ({ product_id: item.draft ? null : item.product.id, new_product: item.draft || null, quantity: item.quantity, expiration_date: item.expiration_date })),
+        scan_events: scanEvents.map(event => ({ product_id:event.product_id, barcode:event.barcode, package_name:event.package_name, quantity:event.quantity }))
       }) });
       deliveryItems = [];
+      scanEvents = [];
       document.querySelector('#deliveryForm').reset();
       clearDraft();
       dialog.close();
@@ -256,6 +380,7 @@
   document.querySelector('#closeDelivery').addEventListener('click', () => dialog.close());
   document.querySelector('#cancelDelivery').addEventListener('click', () => {
     deliveryItems = [];
+    scanEvents = [];
     document.querySelector('#deliveryForm').reset();
     clearDraft();
     dialog.close();

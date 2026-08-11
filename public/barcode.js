@@ -8,6 +8,7 @@
   const result = document.querySelector('#barcodeResult');
   const addMissing = document.querySelector('#barcodeAddMissing');
   let stream = null, detector = null, timer = null, currentCode = '', zxingControls = null, captureTarget = '', addDeliveryFlow = false, groupedDeliveryFlow = false, resumeGroupedOnClose = false;
+  let lookupBusy = false, lastCameraCode = '', lastCameraAt = 0, usbBuffer = '', usbTimer = null;
   const skipToManual = document.querySelector('#barcodeSkipToManual');
 
   const cleanCode = value => String(value || '').trim().replace(/[^0-9A-Za-z-]/g, '').toUpperCase();
@@ -41,40 +42,65 @@
     result.hidden = false; addMissing.hidden = true;
     result.innerHTML = `<article class="barcode-found"><strong>✓ Artykuł jest w magazynie</strong><h3>${escapeHtml(product.name)}</h3><p>${escapeHtml(product.category)} · ${escapeHtml(productBrand(product))} · ${escapeHtml(productWeight(product))}</p><p class="barcode-stock">Stan: <b>${product.quantity} ${escapeHtml(product.unit)}</b>${product.expiration_date ? ` · termin: ${escapeHtml(new Intl.DateTimeFormat('pl-PL').format(new Date(product.expiration_date)))}` : ''}</p><button type="button" class="small-btn" data-open-product="${product.id}">Otwórz artykuł</button></article>`;
   }
-  function lookup(value) {
+  function scanTone() {
+    try {
+      const Context = window.AudioContext || window.webkitAudioContext;
+      if (!Context) return;
+      const context = new Context();
+      const oscillator = context.createOscillator(), gain = context.createGain();
+      oscillator.frequency.value = 880; gain.gain.setValueAtTime(.035, context.currentTime);
+      oscillator.connect(gain); gain.connect(context.destination); oscillator.start();
+      oscillator.stop(context.currentTime + .075); setTimeout(() => context.close(), 160);
+    } catch (_) { /* dźwięk jest tylko dodatkiem */ }
+  }
+  async function bindingFor(code) {
+    try { return await api(`/api/barcodes/${encodeURIComponent(code)}`); }
+    catch (error) { if (/nie znaleziono|not found|nie jest jeszcze przypisany/i.test(error.message || '')) return null; throw error; }
+  }
+  async function lookup(value, source = 'manual') {
     const code = cleanCode(value);
     if (!code) { status.textContent = 'Wpisz kod kreskowy albo włącz aparat.'; return; }
-    currentCode = code; manual.value = code; stopCamera();
-    if (captureTarget && saveScannedCode(code)) return;
-    if (addDeliveryFlow) {
-      const product = all.find(item => cleanCode(item.barcode) === code);
-      if (product) {
-        status.textContent = 'Znaleziono artykuł. Uzupełniam nową dostawę…';
-        const addToGroup = groupedDeliveryFlow;
-        if (addToGroup) resumeGroupedOnClose = false;
-        stopCamera();
-        dialog.close();
-        if (addToGroup) window.openGroupedDeliveryItem?.(product, code);
-        else window.openAddDeliveryForm?.(product, code);
+    const now = Date.now();
+    if (source === 'camera' && code === lastCameraCode && now - lastCameraAt < 500) return;
+    if (lookupBusy) return;
+    lookupBusy = true;
+    lastCameraCode = code; lastCameraAt = now;
+    try {
+      currentCode = code; manual.value = code; stopCamera();
+      if (captureTarget && saveScannedCode(code)) return;
+      const binding = await bindingFor(code);
+      const product = binding ? (all.find(item => Number(item.id) === Number(binding.id)) || binding) : all.find(item => cleanCode(item.barcode) === code);
+      const scan = binding ? { barcode:code, quantity_multiplier:Number(binding.quantity_multiplier || 1), package_name:binding.package_name || 'Sztuka' } : { barcode:code, quantity_multiplier:1, package_name:'Sztuka' };
+      if (addDeliveryFlow) {
+        if (product) {
+          scanTone();
+          status.textContent = `Znaleziono artykuł${scan.quantity_multiplier > 1 ? ` · ${scan.package_name}: +${scan.quantity_multiplier}` : ''}. Uzupełniam dostawę…`;
+          const addToGroup = groupedDeliveryFlow;
+          if (addToGroup) resumeGroupedOnClose = false;
+          dialog.close();
+          if (addToGroup) window.openGroupedDeliveryItem?.(product, scan);
+          else window.openAddDeliveryForm?.(product, code);
+          return;
+        }
+        status.textContent = `Nie ma artykułu z kodem ${code}. Wybierz produkt albo wpisz dane nowego.`;
+        result.hidden = false; addMissing.hidden = false;
+        result.innerHTML = '<article class="barcode-not-found"><strong>Nieznany kod</strong><p>Możesz teraz wybrać istniejący produkt i zapisać ten kod jako opakowanie zbiorcze albo utworzyć nowy produkt.</p></article>';
         return;
       }
-      status.textContent = `Nie ma artykułu z kodem ${code}. Wpisz dane nowego produktu.`;
+      if (product) { status.textContent = `Znaleziono kod: ${code}${scan.quantity_multiplier > 1 ? ` · ${scan.package_name}` : ''}`; showProduct(product); return; }
+      status.textContent = `Nie ma artykułu z kodem ${code} w magazynie.`;
       result.hidden = false; addMissing.hidden = false;
-      result.innerHTML = '<article class="barcode-not-found"><strong>Nowy produkt</strong><p>Ten kod nie jest jeszcze w magazynie. Uzupełnij dane ręcznie.</p></article>';
-      return;
-    }
-    const product = all.find(item => cleanCode(item.barcode) === code);
-    if (product) { status.textContent = `Znaleziono kod: ${code}`; showProduct(product); return; }
-    status.textContent = `Nie ma artykułu z kodem ${code} w magazynie.`;
-    result.hidden = false; addMissing.hidden = false;
-    result.innerHTML = `<article class="barcode-not-found"><strong>Brak artykułu w magazynie</strong><p>Ten kod nie jest jeszcze przypisany do żadnego produktu.</p></article>`;
+      result.innerHTML = `<article class="barcode-not-found"><strong>Brak artykułu w magazynie</strong><p>Ten kod nie jest jeszcze przypisany do żadnego produktu.</p></article>`;
+    } catch (error) {
+      status.textContent = error.message || 'Nie udało się sprawdzić kodu kreskowego.';
+    } finally { lookupBusy = false; }
   }
   async function scanFrame() {
     if (!stream || !dialog.open) return;
     try {
       if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
         const codes = await detector.detect(video);
-        if (codes.length && codes[0].rawValue) { lookup(codes[0].rawValue); return; }
+        if (codes.length && codes[0].rawValue) { lookup(codes[0].rawValue, 'camera'); return; }
       }
     } catch (_) { /* kolejna klatka może być już czytelna */ }
     timer = setTimeout(scanFrame, 180);
@@ -89,7 +115,7 @@
       status.textContent = 'Uruchamiam aparat…';
       const reader = new window.ZXingBrowser.BrowserMultiFormatReader();
       zxingControls = await reader.decodeFromConstraints({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false }, video, (scanResult) => {
-        if (scanResult?.getText()) lookup(scanResult.getText());
+        if (scanResult?.getText()) lookup(scanResult.getText(), 'camera');
       });
       status.textContent = 'Skanowanie trwa — ustaw kod kreskowy w ramce.';
     } catch (error) {
@@ -189,6 +215,21 @@
   document.querySelector('#startBarcodeCamera').addEventListener('click', startCamera);
   document.querySelector('#findBarcodeManual').addEventListener('click', () => lookup(manual.value));
   manual.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); lookup(manual.value); } });
+  document.addEventListener('keydown', event => {
+    if (!dialog.open || !groupedDeliveryFlow || document.activeElement === manual || event.ctrlKey || event.altKey || event.metaKey) return;
+    if (event.key === 'Enter') {
+      if (!usbBuffer) return;
+      event.preventDefault();
+      const code = usbBuffer; usbBuffer = '';
+      if (usbTimer) clearTimeout(usbTimer);
+      lookup(code, 'usb');
+      return;
+    }
+    if (!/^[0-9A-Za-z-]$/.test(event.key)) return;
+    usbBuffer += event.key;
+    if (usbTimer) clearTimeout(usbTimer);
+    usbTimer = setTimeout(() => { usbBuffer = ''; }, 350);
+  });
   result.addEventListener('click', event => { const button = event.target.closest('[data-open-product]'); if (button) openProduct(button.dataset.openProduct); });
   addMissing.addEventListener('click', addProductWithCode);
   skipToManual.addEventListener('click', () => {
@@ -201,7 +242,7 @@
   ['closeBarcode', 'cancelBarcode'].forEach(id => document.querySelector(`#${id}`).addEventListener('click', () => dialog.close()));
   dialog.addEventListener('close', () => {
     const shouldResumeGroupedDelivery = resumeGroupedOnClose && groupedDeliveryFlow;
-    stopCamera(); captureTarget = ''; addDeliveryFlow = false; groupedDeliveryFlow = false; resumeGroupedOnClose = false;
+    stopCamera(); captureTarget = ''; addDeliveryFlow = false; groupedDeliveryFlow = false; resumeGroupedOnClose = false; usbBuffer = '';
     if (shouldResumeGroupedDelivery) window.resumeGroupedDelivery?.();
   });
 })();
