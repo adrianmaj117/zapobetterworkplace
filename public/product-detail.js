@@ -34,7 +34,9 @@
           <p>Ostatnie przyjęcie: <b>${product.received_date ? date(product.received_date) : 'brak daty'}</b></p>
         </div>
       </article>`;
-      batchesBox.innerHTML = batches.length ? batches.map(batch => `<article class="detail-history-row ${Number(batch.quantity) <= 0 ? 'is-empty-batch' : ''}"><span><b>${batch.expiration_date ? `Termin: ${date(batch.expiration_date)}` : 'Termin: brak daty'}</b><small>Przyjęto: ${batch.received_date ? date(batch.received_date) : 'brak daty'} · zapisano: ${date(batch.created_at)}</small></span><strong>${batch.quantity} <small>${escapeHtml(product.unit)}</small></strong></article>`).join('') : '<p class="detail-empty">Nie ma jeszcze zapisanych partii.</p>';
+      const activeBatches = batches.filter(batch => Number(batch.quantity || 0) > 0);
+      const batchTotal = activeBatches.reduce((sum, batch) => sum + Number(batch.quantity || 0), 0);
+      batchesBox.innerHTML = activeBatches.length ? `<div class="detail-batch-total"><span>Łącznie na stanie</span><strong>${batchTotal} <small>${escapeHtml(product.unit)}</small></strong></div>${activeBatches.map(batch => `<article class="detail-history-row"><span><b>${batch.quantity} ${escapeHtml(product.unit)} · ${batch.expiration_date ? date(batch.expiration_date) : 'bez daty'}</b><small>Partia przyjęta: ${batch.received_date ? date(batch.received_date) : 'brak daty'} · zapisana: ${date(batch.created_at)}</small></span></article>`).join('')}` : '<p class="detail-empty">Nie ma aktywnych partii na stanie.</p>';
       movementsBox.innerHTML = movements.length ? movements.map(move => `<article class="detail-history-row"><span><b>${escapeHtml(labelForMovement(move.type))}</b><small>${date(move.movement_date)}${move.note ? ` · ${escapeHtml(move.note)}` : ''}</small></span><strong>${move.quantity} <small>${escapeHtml(product.unit)}</small></strong></article>`).join('') : '<p class="detail-empty">Brak zmian stanu.</p>';
     } catch (error) {
       content.innerHTML = `<p class="detail-empty">${escapeHtml(error.message)}</p>`;

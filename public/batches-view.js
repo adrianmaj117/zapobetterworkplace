@@ -133,12 +133,12 @@
       });
       const section = document.createElement('section');
       section.className = 'product-batches';
+      const total = active.reduce((sum, batch) => sum + Number(batch.quantity || 0), 0);
       const rows = active.length ? active.map(batch => `
         <div class="batch-row">
-          <span><b>Termin: ${esc(batchDate(batch.expiration_date, 'brak daty'))}</b><small>Przyjęto: ${esc(batchDate(batch.received_date, 'brak daty'))}</small></span>
-          <strong>${batch.quantity} <small>${esc(product.unit)}</small></strong>
+          <span><b>${batch.quantity} ${esc(product.unit)} · ${esc(batchDate(batch.expiration_date, 'brak daty'))}</b><small>Partia przyjęta: ${esc(batchDate(batch.received_date, 'brak daty'))}</small></span>
         </div>`).join('') : '<p class="batch-empty">Brak zapisanych partii.</p>';
-      section.innerHTML = `<div class="batch-heading"><b>Partie dostawy (${active.length})</b><button type="button" class="small-btn" data-batch-add="${product.id}">＋ Nowa partia</button></div><div class="batch-list">${rows}</div>`;
+      section.innerHTML = `<div class="batch-heading"><div><b>Partie według terminu (${active.length})</b><small>Łącznie: <strong>${total} ${esc(product.unit)}</strong></small></div><button type="button" class="small-btn" data-batch-add="${product.id}">＋ Nowa partia</button></div><div class="batch-list">${rows}</div>`;
       const detailsTarget = card.querySelector('div:nth-child(2)');
       detailsTarget?.append(section);
     }));
