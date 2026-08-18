@@ -43,6 +43,9 @@
   <link rel="stylesheet" href="expired-panel-center.css?v=3">
   <link rel="stylesheet" href="notifications.css?v=1">
   <link rel="stylesheet" href="notifications-mobile-layout.css?v=1">
+  <link rel="stylesheet" href="warehouse-enhancements.css?v=3">
+  <link rel="stylesheet" href="inventory-check.css?v=1">
+  <link rel="stylesheet" href="shopping-product-link.css?v=1">
   <script src="dark-mode.js"></script>
   <script src="pwa-install.js" defer></script>
   <style>
@@ -179,6 +182,7 @@
     <div class="quick-fill-options">
       <label><input id="quickExpiry" type="checkbox" checked> Termin ważności</label>
       <label><input id="quickBarcode" type="checkbox" checked> Kod kreskowy</label>
+      <label><input id="quickBackupBarcode" type="checkbox"> Drugi kod zapasowy</label>
       <label><input id="quickPhoto" type="checkbox" checked> Zdjęcie produktu</label>
     </div>
     <div class="quick-fill-search"><label>Znajdź lub zeskanuj produkt<input id="quickFillSearch" autocomplete="off" placeholder="Nazwa albo kod kreskowy"></label><button type="button" id="quickFillScan" class="small-btn" data-scan-barcode-for="quickFillSearch">▥ Skanuj</button></div>
@@ -346,6 +350,15 @@
       <div id="shoppingListContent" class="shopping-list-content"></div>
       <div class="form-actions"><button type="button" id="addManualShoppingItem" class="button ghost">＋ Dodaj ręcznie</button><button type="button" id="openDemandTextFromShopping" class="button ghost">Wklej nowe zapotrzebowanie</button><button type="button" id="printShoppingList" class="button primary" hidden>Drukuj / zapisz PDF</button><button type="button" id="closeShoppingListBottom" class="button ghost">Zamknij</button></div>
     </div>
+  </dialog>
+  <button type="button" id="inventoryCheck" hidden aria-hidden="true"></button>
+  <dialog id="inventoryCheckDialog" class="inventory-check-dialog">
+    <div class="modal-head"><div><p class="eyebrow">SPRAWDZANIE MAGAZYNU</p><h2>Porównaj stan fizyczny</h2></div><button type="button" id="closeInventoryCheck" class="icon-btn">×</button></div>
+    <p class="inventory-check-intro">Wpisz tylko policzone pozycje. System pokaże różnicę, a po zatwierdzeniu skoryguje stan magazynu.</p>
+    <div class="inventory-check-toolbar"><label>Szukaj produktu<input id="inventoryCheckSearch" type="search" placeholder="Nazwa, firma lub kategoria"></label><label>Notatka<input id="inventoryCheckNote" placeholder="np. spis poranny"></label></div>
+    <div id="inventoryCheckSummary" class="inventory-check-summary">Nie wpisano jeszcze stanów fizycznych.</div>
+    <div id="inventoryCheckList" class="inventory-check-list"></div>
+    <div class="form-actions"><button type="button" id="cancelInventoryCheck" class="button ghost">Anuluj</button><button type="button" id="saveInventoryCheck" class="button primary">Zapisz korekty</button></div>
   </dialog>
   <dialog id="manualSelectDialog" class="demand-dialog manual-select-dialog">
     <form method="dialog">
@@ -663,6 +676,7 @@
         <label>Nazwa produktu<input id="deliveryManualName" required autocomplete="off" placeholder="Zacznij pisać, np. Jogurt naturalny"></label>
         <div id="deliveryManualSuggestions" class="delivery-manual-suggestions full" hidden></div>
         <label>Kod kreskowy <small>(opcjonalnie)</small><input id="deliveryManualBarcode" inputmode="numeric" autocomplete="off" placeholder="np. 590…"></label>
+        <label id="deliverySavedBarcodeField" hidden>Zapisany kod / opakowanie<select id="deliverySavedBarcode"><option value="">Wybierz kod produktu…</option></select></label>
         <label>Nazwa opakowania <small>(opcjonalnie)</small><input id="deliveryManualPackageName" maxlength="100" placeholder="np. karton 24 szt."></label>
         <label>Mnożnik opakowania<input id="deliveryManualMultiplier" type="number" min="0.001" step="any" value="1"></label>
         <label>Wartość gramatury<input id="deliveryManualWeightValue" type="number" min="0" step="any" placeholder="np. 200"></label>
@@ -706,6 +720,7 @@
       <button data-panel-action="users" data-cap="users"><img src="assets/panel/users.png" alt=""><b>Użytkownicy</b><small>Konta i role</small></button>
       <button data-panel-action="demandHistory"><img src="assets/panel/history.png" alt=""><b>Historia dnia</b><small>Zapotrzebowania</small></button>
       <button data-panel-action="showInventory"><img src="assets/panel/inventory.png" alt=""><b>Pokaż stany</b><small>Pełny przegląd</small></button>
+      <button data-panel-action="inventoryCheck" data-cap="inventoryEdit"><img src="assets/panel/inventory.png" alt=""><b>Sprawdzanie</b><small>Stan fizyczny a system</small></button>
       <button data-panel-action="delivery" data-cap="delivery"><img src="assets/panel/delivery.png" alt=""><b>Dostawa</b><small>Grupowe przyjęcie</small></button>
       <button data-panel-action="deliveryHistory" data-cap="deliveryHistory"><img src="assets/panel/delivery-history.png" alt=""><b>Historia dostaw</b><small>Co przyjechało</small></button>
       <button data-panel-action="shoppingList" data-cap="shopping"><img src="assets/panel/shopping.png" alt=""><b>Lista zakupów</b><small>Brakujące artykuły</small></button>
@@ -725,17 +740,19 @@
   <script src="manual-demand.js" defer></script>
   <script src="description-demand.js?v=4" defer></script>
   <script src="description-demand-redirect.js?v=2" defer></script>
-  <script src="shopping-workflow.js?v=5" defer></script>
+  <script src="shopping-workflow.js?v=6" defer></script>
   <script src="demand-menu.js" defer></script>
   <script src="fruit-category.js" defer></script>
   <script src="users.js" defer></script>
-  <script src="delivery.js?v=2" defer></script>
+  <script src="delivery.js?v=3" defer></script>
   <script src="product-barcodes.js?v=1" defer></script>
   <script src="user-panel.js" defer></script>
   <script src="loading-indicator.js" defer></script>
   <script src="youtube.js" defer></script>
-  <script src="quick-fill.js?v=4" defer></script>
+  <script src="quick-fill.js?v=5" defer></script>
   <script src="notifications.js" defer></script>
   <script src="expired-products.js" defer></script>
+  <script src="inventory-check.js?v=1" defer></script>
+  <script src="warehouse-enhancements.js?v=3" defer></script>
 </body>
 </html>

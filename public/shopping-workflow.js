@@ -40,7 +40,7 @@
     const itemsHtml = group => group.map(item => {
       const left = remaining(item), completed = isCompleted(item);
       return `<article class="shopping-workflow-item ${completed ? 'is-purchased' : ''}">
-        <div><b>${escapeHtml(item.name)}</b><small>${escapeHtml(item.category || 'Inne')} · ${escapeHtml(productBrand(item))} · ${escapeHtml(productWeight(item))}</small></div>
+        <button type="button" class="shopping-open-product" data-shopping-product="${item.product_id || ''}" data-shopping-item="${item.id}" title="Otwórz produkt"><b>${escapeHtml(item.name)}</b><small>${escapeHtml(item.category || 'Inne')} · ${escapeHtml(productBrand(item))} · ${escapeHtml(productWeight(item))}</small><span>${item.product_id ? 'Otwórz produkt →' : 'Dodaj do magazynu →'}</span></button>
         <div class="shopping-item-numbers"><span>stan: ${number(item.available_quantity)} ${escapeHtml(item.unit || 'szt.')}</span><strong>${completed ? `✓ Kupione: ${number(item.purchased_quantity || item.missing_quantity)} ${escapeHtml(item.unit || 'szt.')}` : `brakuje: ${left} ${escapeHtml(item.unit || 'szt.')}`}</strong></div>
         ${completed ? '<span class="shopping-purchased-label">Kupione</span>' : `<button type="button" class="shopping-complete" data-shopping-complete="${item.id}" title="Oznacz jako kupione" aria-label="Oznacz zakup: ${escapeHtml(item.name)}">✓</button>`}
         <button type="button" class="shopping-remove" data-shopping-remove="${item.id}" title="Usuń / pomiń pozycję" aria-label="Usuń ${escapeHtml(item.name)} z listy zakupów">×</button>
@@ -104,6 +104,27 @@
   }, true);
 
   content.addEventListener('click', async event => {
+    const openProduct = event.target.closest('[data-shopping-product]');
+    if (openProduct) {
+      event.preventDefault(); event.stopImmediatePropagation();
+      const item = activeList?.items?.find(entry => Number(entry.id) === Number(openProduct.dataset.shoppingItem));
+      const productId = Number(openProduct.dataset.shoppingProduct || 0);
+      dialog.close();
+      if (productId) {
+        if (!all.some(product => Number(product.id) === productId)) await load();
+        window.openProductDetails?.(productId);
+      } else if (item) {
+        document.querySelector('#add').click();
+        setTimeout(() => {
+          document.querySelector('#name').value = item.name || '';
+          const category = document.querySelector('#category');
+          if ([...category.options].some(option => option.value === item.category)) category.value = item.category;
+          document.querySelector('#brand').value = item.brand || '';
+          document.querySelector('#quantity').value = 0;
+        }, 80);
+      }
+      return;
+    }
     const complete = event.target.closest('[data-shopping-complete]');
     const remove = event.target.closest('[data-shopping-remove]');
     if (!complete && !remove) return;

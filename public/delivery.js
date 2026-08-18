@@ -86,7 +86,21 @@
     box.innerHTML = `<p>Podobne produkty z magazynu — wybierz, aby dodać do tej dostawy:</p>${matches.map(({ product }) => `<button type="button" class="delivery-manual-suggestion" data-manual-product="${product.id}"><span><b>${escapeHtml(product.name)}</b><small>${escapeHtml(product.category)} · ${escapeHtml(productBrand(product))} · ${escapeHtml(productWeight(product))} · stan: ${product.quantity} ${escapeHtml(product.unit)}</small></span><span>Wybierz</span></button>`).join('')}`;
   }
 
-  function chooseManualProduct(product) {
+  async function loadManualBarcodes(product) {
+    const field = document.querySelector('#deliverySavedBarcodeField');
+    const select = document.querySelector('#deliverySavedBarcode');
+    field.hidden = true;
+    select.innerHTML = '<option value="">Wybierz kod produktu…</option>';
+    if (!product?.id) return;
+    try {
+      const codes = await api(`/api/products/${product.id}/barcodes`);
+      if (!codes.length) return;
+      select.innerHTML += codes.map(code => `<option value="${escapeHtml(code.barcode)}" data-multiplier="${Number(code.quantity_multiplier || 1)}" data-package="${escapeHtml(code.package_name || 'Sztuka')}">${escapeHtml(code.package_name || 'Sztuka')} · ${escapeHtml(code.barcode)} · +${Number(code.quantity_multiplier || 1)} szt.</option>`).join('');
+      field.hidden = false;
+    } catch (_) { /* ręczne wpisanie kodu nadal jest dostępne */ }
+  }
+
+  async function chooseManualProduct(product) {
     if (!product) return;
     manualSelectedProductId = Number(product.id);
     document.querySelector('#deliveryManualName').value = product.name;
@@ -98,6 +112,7 @@
     if (!document.querySelector('#deliveryManualBarcode').value.trim()) document.querySelector('#deliveryManualBarcode').value = product.barcode || '';
     document.querySelector('#deliveryManualSuggestions').hidden = true;
     fillManualSuggestions();
+    await loadManualBarcodes(product);
   }
 
   function addToDelivery(item) {
@@ -202,6 +217,8 @@
     manualSelectedProductId = 0;
     document.querySelector('#deliveryManualBarcode').value = barcode || '';
     document.querySelector('#deliveryManualMultiplier').value = '1';
+    document.querySelector('#deliverySavedBarcodeField').hidden = true;
+    document.querySelector('#deliverySavedBarcode').innerHTML = '<option value="">Wybierz kod produktu…</option>';
     document.querySelector('#deliveryManualExpiry').value = '';
     fillManualSuggestions();
     manualDialog.showModal();
@@ -262,6 +279,14 @@
   document.querySelector('#deliveryManualName').addEventListener('input', () => { manualSelectedProductId = 0; renderManualProductSuggestions(); });
   document.querySelector('#deliveryManualMultiplier').addEventListener('input', event => {
     if (document.querySelector('#deliveryManualBarcode').value.trim()) document.querySelector('#deliveryManualQuantity').value = event.target.value || '';
+  });
+  document.querySelector('#deliverySavedBarcode').addEventListener('change', event => {
+    const option = event.target.selectedOptions[0];
+    if (!option?.value) return;
+    document.querySelector('#deliveryManualBarcode').value = option.value;
+    document.querySelector('#deliveryManualMultiplier').value = option.dataset.multiplier || '1';
+    document.querySelector('#deliveryManualPackageName').value = option.dataset.package || 'Sztuka';
+    document.querySelector('#deliveryManualQuantity').value = option.dataset.multiplier || '1';
   });
   document.querySelector('#deliveryManualSuggestions').addEventListener('click', event => {
     const button = event.target.closest('[data-manual-product]');

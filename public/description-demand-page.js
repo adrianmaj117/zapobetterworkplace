@@ -209,16 +209,18 @@
   async function applyDemand() {
     const unresolved = [...reviewRows.querySelectorAll('.review-row')].filter(card => !getProduct(card));
     if (unresolved.length) { unresolved[0].scrollIntoView({ behavior:'smooth', block:'center' }); throw Error('Wybierz produkt dla każdej pozycji albo dodaj brakujący produkt do bazy.'); }
-    const items = selectedRows().map(({ product, quantity }) => ({ product_id:product.id, quantity }));
+    const selected = selectedRows();
+    const items = selected.map(({ product, quantity }) => ({ product_id:product.id, quantity }));
     if (!items.length) throw Error('Wpisz co najmniej jedną ilość większą od zera.');
     if (!password.value) throw Error('Wpisz hasło zatwierdzające.');
     apply.disabled = true; apply.textContent = 'Zapisywanie…';
     const result = await api('/api/demand/apply', { method:'POST', body:JSON.stringify({ items, password:password.value, demand_date:dateInput.value, source_name:'Zapotrzebowanie z opisu', recognized_text:source.value }) });
-    const notice = document.createElement('p'); notice.className = 'review-success';
-    notice.textContent = result.shortages?.length ? `Zapisano zapotrzebowanie. ${result.shortages.length} brakujące pozycje dodano do listy zakupów.` : `Zapisano zapotrzebowanie — odjęto ${result.applied} pozycji.`;
-    review.append(notice); password.value = '';
+    password.value = '';
     apply.textContent = '✓ Zapisano';
-    setTimeout(() => { window.location.href = 'magazyn.html'; }, 1500);
+    const resultView = document.createElement('section');
+    resultView.className = 'production-result';
+    resultView.innerHTML = `<div class="production-result-card"><p class="eyebrow">ZAPOTRZEBOWANIE ZAPISANE</p><h2>Produkty przekazane na produkcję</h2><p>${result.shortages?.length ? `${result.shortages.length} brakujące pozycje dodano do listy zakupów.` : `Odjęto ${result.applied} pozycji ze stanów.`}</p><div class="production-result-items">${selected.map(({ card, product, quantity }) => `<article><img src="${card.querySelector('.review-photo img')?.src || 'assets/category-foods.png'}" alt=""><span><b>${esc(product.name)}</b><small>${esc(product.category)}</small></span><strong>${quantity} ${esc(product.unit)}</strong></article>`).join('')}</div><a href="magazyn.html" class="production-result-back">Wróć do magazynu</a></div>`;
+    document.body.append(resultView);
   }
 
   prepare.addEventListener('click', () => {

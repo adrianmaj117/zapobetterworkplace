@@ -98,6 +98,25 @@ db.exec(`CREATE TABLE IF NOT EXISTS app_settings (
   value TEXT NOT NULL,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 )`);
+db.exec(`CREATE TABLE IF NOT EXISTS inventory_checks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  checked_by_user_id INTEGER,
+  note TEXT DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY(checked_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+);
+CREATE TABLE IF NOT EXISTS inventory_check_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  check_id INTEGER NOT NULL,
+  product_id INTEGER,
+  product_name TEXT NOT NULL,
+  system_quantity REAL NOT NULL,
+  physical_quantity REAL NOT NULL,
+  difference REAL NOT NULL,
+  unit TEXT NOT NULL,
+  FOREIGN KEY(check_id) REFERENCES inventory_checks(id) ON DELETE CASCADE,
+  FOREIGN KEY(product_id) REFERENCES products(id) ON DELETE SET NULL
+);`);
 db.exec(`CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   username TEXT NOT NULL UNIQUE COLLATE NOCASE,
@@ -321,6 +340,86 @@ function syncBundledInventory() {
 const bundledItemsAdded = syncBundledInventory();
 if (bundledItemsAdded) console.log(`Dodano ${bundledItemsAdded} brakujących produktów do bazy.`);
 
+// Scalanie rzeczywistych duplikatów w Bakaliach. Łączymy tylko identyczną
+// nazwę, firmę i gramaturę oraz tylko wtedy, gdy istnieje pewny rekord ze
+// zdjęciem i kodem. Różne warianty produktu pozostają rozdzielone.
+function mergeDuplicateBakalie() {
+  const normalize = value => String(value || '').toLocaleLowerCase('pl-PL').replace(/ł/g, 'l').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+  const canonicalName = product => {
+    const value = normalize(product.name)
+      .replace(/\b\d+(?:[,.]\d+)?\s*(?:g|kg)\b/g, ' ')
+      .replace(/\bhebar\b/g, ' ')
+      .replace(/\bsuszon(?:y|a|e)\b/g, ' ')
+      .replace(/\bniesolon(?:y|a|e)\b/g, ' ')
+      .replace(/\s+/g, ' ').trim();
+    const aliases = [
+      [/\b(?:bakalie mix|mieszanka bakalii)\b/, 'mieszanka bakalii'],
+      [/\bchips\w* banan\w*\b/, 'chips bananowy'], [/\bdaktyl\w*\b/, 'daktyle'],
+      [/\bmigdal\w*\b/, 'migdal'], [/\bmorel\w*\b/, 'morela'],
+      [/\borzech\w* lask\w*\b/, 'orzech laskowy'], [/\borzech\w* ziem\w*\b/, 'orzech ziemny'],
+      [/\borzech\w* nerk\w*\b/, 'orzech nerkowca'], [/\bpistac\w*\b/, 'pistacje'],
+      [/\bsliw\w*\b/, 'sliwka'], [/\bzurawin\w*\b/, 'zurawina'],
+      [/\borzech\w* wlos\w*\b/, 'orzech wloski'], [/\brodzyn\w*\b/, 'rodzynki'],
+      [/\bslonecz\w*\b/, 'slonecznik'], [/\bfig\w*\b/, 'figi']
+    ];
+    return aliases.find(([pattern]) => pattern.test(value))?.[1] || value;
+  };
+  const effectiveWeight = product => {
+    if (Number(product.weight_value || 0) > 0) return `${Number(product.weight_value)}${normalize(product.weight_unit)}`;
+    const match = normalize(product.name).match(/\b(\d+(?:[,.]\d+)?)\s*(g|kg)\b/);
+    return match ? `${Number(match[1].replace(',', '.'))}${match[2]}` : '';
+  };
+  const rows = db.prepare(`SELECT p.*,
+      (SELECT COUNT(*) FROM product_barcodes pb WHERE pb.product_id=p.id) AS extra_codes
+    FROM products p WHERE lower(p.category)='bakalie' ORDER BY p.id`).all();
+  const groups = new Map();
+  for (const product of rows) {
+    const key = [canonicalName(product), normalize(product.brand || 'HEBAR'), effectiveWeight(product)].join('|');
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(product);
+  }
+  const tableExists = name => Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(name));
+  let merged = 0;
+  for (const products of groups.values()) {
+    if (products.length < 2) continue;
+    const score = item => (item.image_data ? 100 : 0) + (item.barcode || Number(item.extra_codes) ? 50 : 0) + Number(item.quantity > 0) * 5 - item.id / 100000;
+    const ranked = [...products].sort((a, b) => score(b) - score(a));
+    const keep = ranked[0];
+    if (!products.some(item => item.image_data) || !products.some(item => item.barcode || Number(item.extra_codes))) continue;
+    db.exec('BEGIN');
+    try {
+      for (const duplicate of ranked.slice(1)) {
+        if (duplicate.barcode && duplicate.barcode !== keep.barcode) {
+          if (!keep.barcode) {
+            db.prepare('UPDATE products SET barcode=? WHERE id=?').run(duplicate.barcode, keep.id);
+            keep.barcode = duplicate.barcode;
+          } else db.prepare(`INSERT OR IGNORE INTO product_barcodes (product_id, barcode, quantity_multiplier, package_name) VALUES (?, ?, 1, 'Kod zapasowy po scaleniu')`).run(keep.id, duplicate.barcode);
+        }
+        db.prepare('UPDATE OR IGNORE product_barcodes SET product_id=? WHERE product_id=?').run(keep.id, duplicate.id);
+        for (const table of ['movements','product_batches','delivery_items','delivery_scan_events','demand_items','shopping_list_items','inventory_check_items']) {
+          if (tableExists(table)) db.prepare(`UPDATE ${table} SET product_id=? WHERE product_id=?`).run(keep.id, duplicate.id);
+        }
+        if (tableExists('demand_day_products')) {
+          for (const day of db.prepare('SELECT demand_date, opening_quantity FROM demand_day_products WHERE product_id=?').all(duplicate.id)) {
+            const current = db.prepare('SELECT opening_quantity FROM demand_day_products WHERE demand_date=? AND product_id=?').get(day.demand_date, keep.id);
+            if (current) db.prepare('UPDATE demand_day_products SET opening_quantity=? WHERE demand_date=? AND product_id=?').run(Number(current.opening_quantity) + Number(day.opening_quantity), day.demand_date, keep.id);
+            else db.prepare('UPDATE demand_day_products SET product_id=? WHERE demand_date=? AND product_id=?').run(keep.id, day.demand_date, duplicate.id);
+          }
+          db.prepare('DELETE FROM demand_day_products WHERE product_id=?').run(duplicate.id);
+        }
+        db.prepare(`UPDATE products SET quantity=quantity+?, min_quantity=MAX(min_quantity, ?),
+          expiration_date=CASE WHEN expiration_date IS NULL OR (? IS NOT NULL AND ?<expiration_date) THEN ? ELSE expiration_date END,
+          received_date=COALESCE(received_date, ?), updated_at=CURRENT_TIMESTAMP WHERE id=?`)
+          .run(Number(duplicate.quantity || 0), Number(duplicate.min_quantity || 0), duplicate.expiration_date, duplicate.expiration_date, duplicate.expiration_date, duplicate.received_date, keep.id);
+        db.prepare('DELETE FROM products WHERE id=?').run(duplicate.id);
+        merged += 1;
+      }
+      syncProductExpiryFromBatches(keep.id);
+      db.exec('COMMIT');
+    } catch (error) { db.exec('ROLLBACK'); throw error; }
+  }
+  return merged;
+}
 // Jednorazowe uporządkowanie nazw przekazane przez ZapoBetterWorkPlace.
 // Działa także na istniejącym wolumenie Railway, bez zmiany ilości i dat.
 function applyProductNameCorrections() {
@@ -363,6 +462,8 @@ function applyProductNameCorrections() {
 }
 const correctedProductNames = applyProductNameCorrections();
 if (correctedProductNames) console.log(`Zmieniono nazwy produktów: ${correctedProductNames}.`);
+const duplicateBakalieMerged = mergeDuplicateBakalie();
+if (duplicateBakalieMerged) console.log(`Scalono ${duplicateBakalieMerged} zduplikowanych produktów w Bakaliach.`);
 
 function ensureFruitProducts() {
   const setting = 'default_fruit_products_2026_08_01';
@@ -901,6 +1002,7 @@ app.get('/api/products', (req, res) => {
   const rows = db.prepare(`
     SELECT id, name, category, unit, quantity, min_quantity, expiration_date, notes, created_at, updated_at,
       weight_grams, weight_value, weight_unit, brand, received_date, barcode,
+      (SELECT COUNT(*) FROM product_barcodes pb WHERE pb.product_id=products.id) AS extra_barcode_count,
       CASE WHEN image_data IS NOT NULL AND image_data <> '' THEN 1 ELSE 0 END AS has_image
     FROM products
     WHERE name LIKE @search AND (@category = '' OR category = @category)
@@ -1642,6 +1744,64 @@ app.post('/api/products/bulk-move', (req, res) => {
     ? db.prepare(`UPDATE products SET category=?, brand=?, weight_value=?, weight_unit=?, updated_at=CURRENT_TIMESTAMP WHERE id IN (${marks})`).run(category, brand === 'Pozostałe' ? '' : brand, Number(weight_value), weight_unit, ...ids)
     : db.prepare(`UPDATE products SET category=?, brand=?, updated_at=CURRENT_TIMESTAMP WHERE id IN (${marks})`).run(category, brand === 'Pozostałe' ? '' : brand, ...ids);
   res.json({ moved: result.changes });
+});
+
+// Przeniesienie do innej kategorii nie wymaga wybierania firmy ani gramatury.
+// Te dane zostają przy produkcie bez zmian.
+app.post('/api/products/bulk-move-category', allow('inventoryEdit'), (req, res) => {
+  const ids = [...new Set((Array.isArray(req.body.ids) ? req.body.ids : []).map(Number).filter(Number.isInteger))];
+  const category = canonicalCategory(req.body.category);
+  if (!ids.length || !category) return res.status(400).json({ error: 'Wybierz produkty oraz kategorię docelową.' });
+  const marks = ids.map(() => '?').join(',');
+  const result = db.prepare(`UPDATE products SET category=?, updated_at=CURRENT_TIMESTAMP WHERE id IN (${marks})`).run(category, ...ids);
+  res.json({ moved: result.changes });
+});
+
+app.post('/api/products/:id/move-category', allow('inventoryEdit'), (req, res) => {
+  const product = productById(Number(req.params.id));
+  const category = canonicalCategory(req.body.category);
+  if (!product) return res.status(404).json({ error: 'Nie znaleziono produktu.' });
+  if (!category) return res.status(400).json({ error: 'Wybierz kategorię docelową.' });
+  db.prepare('UPDATE products SET category=?, updated_at=CURRENT_TIMESTAMP WHERE id=?').run(category, product.id);
+  res.json(productById(product.id));
+});
+
+// Spis z natury: operator wpisuje wyłącznie faktycznie policzone pozycje.
+// Różnice korygują także partie, dzięki czemu terminy i stan pozostają zgodne.
+app.post('/api/inventory-checks', allow('inventoryEdit'), (req, res) => {
+  const items = (Array.isArray(req.body?.items) ? req.body.items : []).map(item => ({
+    product_id: Number(item.product_id), physical_quantity: Number(item.physical_quantity)
+  })).filter(item => Number.isInteger(item.product_id) && Number.isFinite(item.physical_quantity) && item.physical_quantity >= 0);
+  if (!items.length) return res.status(400).json({ error: 'Wpisz co najmniej jeden policzony stan.' });
+  const note = String(req.body?.note || '').trim().slice(0, 500);
+  db.exec('BEGIN');
+  try {
+    const check = db.prepare('INSERT INTO inventory_checks (checked_by_user_id, note) VALUES (?, ?)').run(req.user?.id || null, note);
+    const addItem = db.prepare(`INSERT INTO inventory_check_items
+      (check_id, product_id, product_name, system_quantity, physical_quantity, difference, unit)
+      VALUES (?, ?, ?, ?, ?, ?, ?)`);
+    const addBatch = db.prepare('INSERT INTO product_batches (product_id, quantity, expiration_date, received_date) VALUES (?, ?, NULL, ?)');
+    const movement = db.prepare("INSERT INTO movements (product_id, type, quantity, note) VALUES (?, 'adjustment', ?, ?)");
+    const today = new Date().toISOString().slice(0, 10);
+    for (const item of items) {
+      const product = productById(item.product_id);
+      if (!product) throw new Error('Jeden z produktów nie istnieje już w magazynie.');
+      const system = Number(product.quantity || 0);
+      const difference = item.physical_quantity - system;
+      addItem.run(check.lastInsertRowid, product.id, product.name, system, item.physical_quantity, difference, product.unit || 'szt.');
+      if (!difference) continue;
+      db.prepare('UPDATE products SET quantity=?, updated_at=CURRENT_TIMESTAMP WHERE id=?').run(item.physical_quantity, product.id);
+      if (difference > 0) addBatch.run(product.id, difference, today);
+      else consumeProductBatches(product.id, Math.abs(difference));
+      movement.run(product.id, Math.abs(difference), `Spis z natury #${check.lastInsertRowid}`);
+      syncProductExpiryFromBatches(product.id);
+    }
+    db.exec('COMMIT');
+    res.status(201).json({ id:Number(check.lastInsertRowid), changed:items.length });
+  } catch (error) {
+    db.exec('ROLLBACK');
+    res.status(400).json({ error:error.message || 'Nie udało się zapisać sprawdzania.' });
+  }
 });
 
 app.post('/api/products/:id/movement', (req, res) => {

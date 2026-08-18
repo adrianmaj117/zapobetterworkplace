@@ -1,0 +1,5 @@
+.shopping-open-product{display:grid;gap:3px;min-width:0;padding:0;border:0;background:transparent;color:inherit;text-align:left;cursor:pointer}
+.shopping-open-product b,.shopping-open-product small{display:block}
+.shopping-open-product span{margin-top:3px;color:#147653;font-size:11px;font-weight:900}
+.shopping-open-product:hover b{text-decoration:underline}
+html[data-theme="dark"] .shopping-open-product span{color:#71deb1}
