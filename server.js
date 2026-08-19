@@ -234,6 +234,14 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_delivery_scan_events_delivery ON delivery_scan_events(delivery_id, id);
 `);
+for (const [name, definition] of [
+  ['quantity_multiplier', 'REAL NOT NULL DEFAULT 1'],
+  ['package_count', 'REAL NOT NULL DEFAULT 1']
+]) {
+  if (!db.prepare('PRAGMA table_info(delivery_scan_events)').all().some(column => column.name === name)) {
+    db.exec(`ALTER TABLE delivery_scan_events ADD COLUMN ${name} ${definition}`);
+  }
+}
 if (!db.prepare('PRAGMA table_info(deliveries)').all().some(column => column.name === 'accepted_by_user_id')) {
   db.exec('ALTER TABLE deliveries ADD COLUMN accepted_by_user_id INTEGER');
 }
@@ -1003,6 +1011,7 @@ app.get('/api/products', (req, res) => {
     SELECT id, name, category, unit, quantity, min_quantity, expiration_date, notes, created_at, updated_at,
       weight_grams, weight_value, weight_unit, brand, received_date, barcode,
       (SELECT COUNT(*) FROM product_barcodes pb WHERE pb.product_id=products.id) AS extra_barcode_count,
+      (SELECT COUNT(*) FROM product_barcodes pb WHERE pb.product_id=products.id AND pb.quantity_multiplier > 1) AS package_barcode_count,
       CASE WHEN image_data IS NOT NULL AND image_data <> '' THEN 1 ELSE 0 END AS has_image
     FROM products
     WHERE name LIKE @search AND (@category = '' OR category = @category)
@@ -1252,7 +1261,9 @@ app.post('/api/deliveries', (req, res) => {
   const scanEvents = (Array.isArray(req.body?.scan_events) ? req.body.scan_events : []).map(raw => ({
     product_id: productIdFrom(raw.product_id), barcode: cleanBarcode(raw.barcode),
     package_name: String(raw.package_name || raw.packageName || 'Sztuka').trim().slice(0, 100) || 'Sztuka',
-    quantity: Number(raw.quantity)
+    quantity: Number(raw.quantity),
+    quantity_multiplier: Number(raw.quantity_multiplier || raw.quantityMultiplier || 1),
+    package_count: Number(raw.package_count || raw.packageCount || 1)
   })).filter(event => event.product_id && event.barcode && Number.isFinite(event.quantity) && event.quantity > 0);
 
   db.exec('BEGIN');
@@ -1263,8 +1274,9 @@ app.post('/api/deliveries', (req, res) => {
     const updateProduct = db.prepare('UPDATE products SET quantity=quantity+?, received_date=?, updated_at=CURRENT_TIMESTAMP WHERE id=?');
     const addBatch = db.prepare('INSERT INTO product_batches (product_id, quantity, expiration_date, received_date) VALUES (?, ?, ?, ?)');
     const addMovement = db.prepare("INSERT INTO movements (product_id, type, quantity, note) VALUES (?, 'add', ?, ?)");
-    const addScanEvent = db.prepare(`INSERT INTO delivery_scan_events (delivery_id, product_id, barcode, package_name, quantity)
-      VALUES (?, ?, ?, ?, ?)`);
+    const addScanEvent = db.prepare(`INSERT INTO delivery_scan_events
+      (delivery_id, product_id, barcode, package_name, quantity, quantity_multiplier, package_count)
+      VALUES (?, ?, ?, ?, ?, ?, ?)`);
     const touched = new Set();
     for (const item of items) {
       const product = item.product_id ? productById(item.product_id) : createProductFromDeliveryDraft(item.new_product);
@@ -1278,7 +1290,11 @@ app.post('/api/deliveries', (req, res) => {
       }
       touched.add(product.id);
     }
-    scanEvents.forEach(event => addScanEvent.run(delivery.lastInsertRowid, event.product_id, event.barcode, event.package_name, event.quantity));
+    scanEvents.forEach(event => addScanEvent.run(
+      delivery.lastInsertRowid, event.product_id, event.barcode, event.package_name, event.quantity,
+      Number.isFinite(event.quantity_multiplier) && event.quantity_multiplier > 0 ? event.quantity_multiplier : 1,
+      Number.isFinite(event.package_count) && event.package_count > 0 ? event.package_count : 1
+    ));
     touched.forEach(id => syncProductExpiryFromBatches(id));
     db.exec('COMMIT');
     res.status(201).json(deliveryById(Number(delivery.lastInsertRowid)));

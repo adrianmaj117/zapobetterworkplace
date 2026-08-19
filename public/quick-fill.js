@@ -20,7 +20,7 @@
     const needs = selected();
     return (needs.expiry && !product.expiration_date)
       || (needs.barcode && !product.barcode)
-      || (needs.backupBarcode && Number(product.extra_barcode_count || 0) < 1)
+      || (needs.backupBarcode && Number(product.package_barcode_count || 0) < 1)
       || (needs.photo && !product.has_image);
   };
   const missingBadges = product => {
@@ -28,7 +28,7 @@
     return [
       needs.expiry && !product.expiration_date ? 'brak terminu' : '',
       needs.barcode && !product.barcode ? 'brak kodu głównego' : '',
-      needs.backupBarcode && Number(product.extra_barcode_count || 0) < 1 ? 'brak kodu zapasowego' : '',
+      needs.backupBarcode && Number(product.package_barcode_count || 0) < 1 ? 'brak kodu opakowania' : '',
       needs.photo && !product.has_image ? 'brak zdjęcia' : ''
     ].filter(Boolean);
   };
@@ -60,8 +60,8 @@
     const badges = missingBadges(product).map(badge => `<span>${badge}</span>`).join('');
     const barcodeField = wants.barcode && !product.barcode
       ? `<label>Kod główny<div class="quick-fill-barcode"><input id="quickBarcode-${product.id}" name="barcode" inputmode="numeric" autocomplete="off" placeholder="Zeskanuj lub wpisz"><button type="button" class="small-btn" data-scan-barcode-for="quickBarcode-${product.id}">▥ Skanuj</button></div></label>` : '';
-    const backupBarcodeField = wants.backupBarcode && Number(product.extra_barcode_count || 0) < 1
-      ? `<label>Kod zapasowy<div class="quick-fill-barcode"><input id="quickBackupBarcode-${product.id}" name="backup_barcode" inputmode="numeric" autocomplete="off" placeholder="Drugi kod tego produktu"><button type="button" class="small-btn" data-scan-barcode-for="quickBackupBarcode-${product.id}">▥ Skanuj</button></div></label>` : '';
+    const backupBarcodeField = wants.backupBarcode && Number(product.package_barcode_count || 0) < 1
+      ? `<div class="quick-fill-package-fields"><label>Kod opakowania zbiorczego<div class="quick-fill-barcode"><input id="quickBackupBarcode-${product.id}" name="backup_barcode" inputmode="numeric" autocomplete="off" placeholder="Zeskanuj kod kartonu lub paczki"><button type="button" class="small-btn" data-scan-barcode-for="quickBackupBarcode-${product.id}">▥ Skanuj</button></div></label><label>Sztuk w jednym opakowaniu<input name="package_multiplier" type="number" min="2" step="1" placeholder="np. 20"></label></div>` : '';
     return `<form class="quick-fill-row" data-id="${product.id}"><div class="quick-fill-product"><b>${esc(product.name)}</b><small>${esc(product.brand || 'Pozostałe')} · ${product.weight_value ? `${product.weight_value} ${esc(product.weight_unit)}` : 'bez gramatury'}</small><div class="quick-fill-badges">${badges}</div></div><div class="quick-fill-fields">${wants.expiry && !product.expiration_date ? '<label>Termin<input name="expiry" type="date" required></label>' : ''}${barcodeField}${backupBarcodeField}${wants.photo && !product.has_image ? '<label>Zdjęcie<input name="photo" type="file" accept="image/*"></label>' : ''}</div><button type="submit" class="quick-fill-approve" aria-label="Zatwierdź i zapisz" title="Zatwierdź i zapisz"><span>✓</span><b>Zapisz</b></button><p class="quick-fill-saved" role="status" hidden>✓ Zapisano</p></form>`;
   }
   async function save(event) {
@@ -74,11 +74,13 @@
     const expiry = String(data.get('expiry') || product.expiration_date || '');
     const barcode = String(data.get('barcode') || product.barcode || '').trim();
     const backupBarcode = String(data.get('backup_barcode') || '').trim();
+    const packageMultiplier = Number(data.get('package_multiplier') || 0);
     const photo = data.get('photo');
     if (fields.expiry.checked && !product.expiration_date && !expiry) return window.alert('Wpisz termin ważności.');
     if (fields.barcode.checked && !product.barcode && !barcode) return window.alert('Wpisz lub zeskanuj główny kod kreskowy.');
-    if (fields.backupBarcode.checked && Number(product.extra_barcode_count || 0) < 1 && !backupBarcode) return window.alert('Wpisz lub zeskanuj drugi kod zapasowy.');
-    if (backupBarcode && cleanBarcode(backupBarcode) === cleanBarcode(barcode)) return window.alert('Kod zapasowy musi być inny niż kod główny.');
+    if (fields.backupBarcode.checked && Number(product.package_barcode_count || 0) < 1 && !backupBarcode) return window.alert('Wpisz lub zeskanuj kod opakowania zbiorczego.');
+    if (backupBarcode && (!Number.isInteger(packageMultiplier) || packageMultiplier < 2)) return window.alert('Podaj, ile pełnych sztuk znajduje się w jednym opakowaniu.');
+    if (backupBarcode && cleanBarcode(backupBarcode) === cleanBarcode(barcode)) return window.alert('Kod opakowania musi być inny niż kod pojedynczej sztuki.');
     if (fields.photo.checked && !product.has_image && (!photo || !photo.size)) return window.alert('Wybierz zdjęcie produktu.');
     const button = form.querySelector('button[type="submit"]');
     button.disabled = true; button.textContent = '…';
@@ -89,7 +91,7 @@
         weight_unit: product.weight_unit, received_date: product.received_date, expiration_date: expiry || null,
         notes: product.notes || '', barcode
       }) });
-      if (backupBarcode) await api(`/api/products/${product.id}/barcodes`, { method:'POST', body:JSON.stringify({ barcode:backupBarcode, quantity_multiplier:1, package_name:'Kod zapasowy' }) });
+      if (backupBarcode) await api(`/api/products/${product.id}/barcodes`, { method:'POST', body:JSON.stringify({ barcode:backupBarcode, quantity_multiplier:packageMultiplier, package_name:`Opakowanie zbiorcze ${packageMultiplier} szt.` }) });
       if (photo && photo.size) await api(`/api/products/${product.id}/image`, { method: 'POST', body: JSON.stringify({ image_data: await read(photo) }) });
       const saved = form.querySelector('.quick-fill-saved');
       if (saved) { saved.hidden = false; button.hidden = true; }

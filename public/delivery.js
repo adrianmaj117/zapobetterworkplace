@@ -123,14 +123,18 @@
     else deliveryItems.push(item);
   }
 
-  function addScanEvent(product, scan, quantity) {
+  function addScanEvent(product, scan, quantity, packageCount = null) {
     if (!scan?.barcode) return;
+    const multiplier = Number(scan.quantity_multiplier || 1);
+    const packages = Number(packageCount || (multiplier > 1 ? Number(quantity) / multiplier : 1));
     scanEvents.push({
       product_id: product.id,
       product_name: product.name,
       barcode: scan.barcode,
       package_name: scan.package_name || 'Sztuka',
       quantity: Number(quantity),
+      quantity_multiplier: multiplier,
+      package_count: Number.isFinite(packages) && packages > 0 ? packages : 1,
       time: new Date().toLocaleTimeString('pl-PL', { hour:'2-digit', minute:'2-digit', second:'2-digit' })
     });
   }
@@ -140,6 +144,9 @@
   // sumowane do niej — bez dodatkowego klikania.
   function addRepeatedScan(product, scan) {
     if (!scan?.barcode) return false;
+    // Kod opakowania zawsze otwiera kalkulator liczby paczek. Dzięki temu
+    // jeden skan może przyjąć np. 10 kartonów po 20 sztuk, a nie tylko 20 sztuk.
+    if (Number(scan.quantity_multiplier || 1) > 1) return false;
     const productLines = deliveryItems.filter(entry => !entry.draft && Number(entry.product.id) === Number(product.id));
     if (productLines.length !== 1) return false;
     const quantity = Number(scan.quantity_multiplier || 1);
@@ -153,7 +160,7 @@
     const confirm = document.querySelector('#confirmDelivery');
     confirm.disabled = !deliveryItems.length;
     const total = deliveryItems.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
-    const scanHistory = scanEvents.length ? `<details class="delivery-scan-history"><summary>Historia skanów (${scanEvents.length})</summary><ul>${scanEvents.map(event => `<li>${escapeHtml(event.time || '')} · ${escapeHtml(event.product_name || '')} · ${escapeHtml(event.package_name || 'Sztuka')} · <b>+${Number(event.quantity)}</b></li>`).join('')}</ul></details>` : '';
+    const scanHistory = scanEvents.length ? `<details class="delivery-scan-history"><summary>Historia skanów (${scanEvents.length})</summary><ul>${scanEvents.map(event => { const multiplier=Number(event.quantity_multiplier || 1); const packages=Number(event.package_count || 1); const calculation=multiplier>1 ? `${packages} opak. × ${multiplier} szt. = <b>+${Number(event.quantity)} szt.</b>` : `<b>+${Number(event.quantity)} szt.</b>`; return `<li>${escapeHtml(event.time || '')} · ${escapeHtml(event.product_name || '')} · ${escapeHtml(event.package_name || 'Sztuka')} · ${calculation}</li>`; }).join('')}</ul></details>` : '';
     linesBox.innerHTML = deliveryItems.length ? `<div class="delivery-lines-summary"><b>Różne produkty: ${deliveryItems.length}</b><b>Łącznie: ${total}</b></div>${deliveryItems.map((item, index) => `
       <article class="delivery-line">
         <img src="${item.image_data || defaultImage}" alt="${escapeHtml(item.product.name)}">
@@ -192,12 +199,31 @@
     pendingProduct = product;
     pendingScan = scan && typeof scan === 'object' ? scan : null;
     pendingProduct.delivery_image = await productImage(product);
+    const multiplier = Number(pendingScan?.quantity_multiplier || 1);
+    const isPackage = Boolean(pendingScan?.barcode) && multiplier > 1;
     const packageLabel = pendingScan?.package_name ? ` · ${pendingScan.package_name}` : '';
-    document.querySelector('#deliveryItemPreview').innerHTML = `<img src="${pendingProduct.delivery_image || defaultImage}" alt="${escapeHtml(product.name)}"><div><p>${escapeHtml(product.category)} · ${escapeHtml(productBrand(product))} · ${escapeHtml(productWeight(product))}${escapeHtml(packageLabel)}</p><h3>${escapeHtml(product.name)}</h3><small>Obecny stan: <b>${product.quantity} ${escapeHtml(product.unit)}</b>${pendingScan ? ` · zeskanowano: <b>+${Number(pendingScan.quantity_multiplier || 1)}</b>` : ''}</small></div>`;
-    document.querySelector('#deliveryItemQuantity').value = pendingScan?.quantity_multiplier || '';
+    document.querySelector('#deliveryItemPreview').innerHTML = `<img src="${pendingProduct.delivery_image || defaultImage}" alt="${escapeHtml(product.name)}"><div><p>${escapeHtml(product.category)} · ${escapeHtml(productBrand(product))} · ${escapeHtml(productWeight(product))}${escapeHtml(packageLabel)}</p><h3>${escapeHtml(product.name)}</h3><small>Obecny stan: <b>${product.quantity} ${escapeHtml(product.unit)}</b>${isPackage ? ` · kod opakowania: <b>${multiplier} szt.</b>` : pendingScan ? ' · kod pojedynczej sztuki' : ''}</small></div>`;
+    const calculation = document.querySelector('#deliveryPackageCalculation');
+    const quantityField = document.querySelector('#deliveryItemQuantityField');
+    const quantityInput = document.querySelector('#deliveryItemQuantity');
+    calculation.hidden = !isPackage;
+    quantityField.hidden = isPackage;
+    quantityInput.readOnly = isPackage;
+    document.querySelector('#deliveryPackageSize').value = isPackage ? multiplier : '';
+    document.querySelector('#deliveryPackageCount').value = '1';
+    document.querySelector('#deliveryPackageTotal').value = isPackage ? multiplier : '';
+    quantityInput.value = pendingScan ? multiplier : '';
     document.querySelector('#deliveryItemExpiry').value = product.expiration_date || '';
     itemDialog.showModal();
-    document.querySelector('#deliveryItemQuantity').focus();
+    (isPackage ? document.querySelector('#deliveryPackageCount') : quantityInput).focus();
+  }
+
+  function recalculateDeliveryPackageQuantity() {
+    const size = Number(document.querySelector('#deliveryPackageSize').value || 0);
+    const packages = Number(document.querySelector('#deliveryPackageCount').value || 0);
+    const total = size * packages;
+    document.querySelector('#deliveryPackageTotal').value = Number.isFinite(total) && total > 0 ? total : '';
+    document.querySelector('#deliveryItemQuantity').value = Number.isFinite(total) && total > 0 ? total : '';
   }
 
   function requireSupplier() {
@@ -233,7 +259,7 @@
       historyBox.innerHTML = deliveries.length ? deliveries.map(delivery => `<article class="delivery-history-card">
         <header><div><p>DOSTAWA</p><h3>${escapeHtml(delivery.supplier)}</h3><small>Przyjęto: ${formatDate(delivery.received_date)}${delivery.accepted_by_name ? ` · zatwierdził(a): ${escapeHtml(delivery.accepted_by_name)}` : ''}${delivery.note ? ` · ${escapeHtml(delivery.note)}` : ''}</small></div><b>${delivery.items.length} ${delivery.items.length === 1 ? 'produkt' : 'produktów'}</b></header>
         <div class="delivery-history-items">${delivery.items.map(item => `<button type="button" class="delivery-history-item" data-delivery-product="${item.product_id || ''}"><img src="${item.image_data || defaultImage}" alt=""><span><b>${escapeHtml(item.name || 'Usunięty produkt')}</b><small>${escapeHtml(item.category || '')} · ${escapeHtml(item.brand || 'Pozostałe')} · ${item.weight_value ? `${item.weight_value} ${escapeHtml(item.weight_unit)}` : 'bez gramatury'}</small><small>Termin: ${formatDate(item.expiration_date)}</small></span><strong>${item.quantity}<small>${escapeHtml(item.unit || 'szt.')}</small></strong></button>`).join('')}</div>
-        ${(delivery.scan_events || []).length ? `<details class="delivery-scan-history"><summary>Historia skanów (${delivery.scan_events.length})</summary><ul>${delivery.scan_events.map(event => `<li>${escapeHtml(event.scanned_at || '')} · ${escapeHtml(event.name || 'Produkt')} · ${escapeHtml(event.package_name || 'Sztuka')} · <b>+${Number(event.quantity)}</b></li>`).join('')}</ul></details>` : ''}
+        ${(delivery.scan_events || []).length ? `<details class="delivery-scan-history"><summary>Historia skanów (${delivery.scan_events.length})</summary><ul>${delivery.scan_events.map(event => { const multiplier=Number(event.quantity_multiplier || 1); const packages=Number(event.package_count || 1); const calculation=multiplier>1 ? `${packages} opak. × ${multiplier} szt. = <b>+${Number(event.quantity)} szt.</b>` : `<b>+${Number(event.quantity)} szt.</b>`; return `<li>${escapeHtml(event.scanned_at || '')} · ${escapeHtml(event.name || 'Produkt')} · ${escapeHtml(event.package_name || 'Sztuka')} · ${calculation}</li>`; }).join('')}</ul></details>` : ''}
       </article>`).join('') : '<div class="delivery-empty"><b>Nie ma jeszcze zatwierdzonych dostaw.</b><span>Po pierwszym przyjęciu produktów pojawią się tutaj szczegóły.</span></div>';
     } catch (error) {
       historyBox.innerHTML = `<p class="delivery-empty">${escapeHtml(error.message)}</p>`;
@@ -292,6 +318,7 @@
     const button = event.target.closest('[data-manual-product]');
     if (button) chooseManualProduct(all.find(product => Number(product.id) === Number(button.dataset.manualProduct)));
   });
+  document.querySelector('#deliveryPackageCount').addEventListener('input', recalculateDeliveryPackageQuantity);
 
   document.querySelector('#deliveryItemForm').addEventListener('submit', event => {
     event.preventDefault();
@@ -300,8 +327,9 @@
     if (!pendingProduct || !Number.isFinite(quantity) || quantity <= 0 || !expiration) return;
     const product = pendingProduct;
     const scan = pendingScan;
+    const packageCount = Number(scan?.quantity_multiplier || 1) > 1 ? Number(document.querySelector('#deliveryPackageCount').value) : null;
     addToDelivery({ product, image_data: product.delivery_image || '', quantity, expiration_date: expiration });
-    addScanEvent(product, scan, quantity);
+    addScanEvent(product, scan, quantity, packageCount);
     pendingProduct = null;
     pendingScan = null;
     itemDialog.close();
