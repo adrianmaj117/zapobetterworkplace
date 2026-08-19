@@ -33,11 +33,11 @@
   <link rel="stylesheet" href="youtube-controls.css?v=1">
   <link rel="stylesheet" href="youtube-playlist.css?v=1">
   <link rel="stylesheet" href="youtube-modern.css?v=1">
-  <link rel="stylesheet" href="quick-fill.css?v=3">
+  <link rel="stylesheet" href="quick-fill.css?v=4">
   <link rel="stylesheet" href="quick-fill-scan.css?v=1">
   <link rel="stylesheet" href="quick-fill-approve.css?v=2">
   <link rel="stylesheet" href="quick-fill-demand-mobile.css?v=2">
-  <link rel="stylesheet" href="inventory-export.css?v=1">
+  <link rel="stylesheet" href="inventory-export.css?v=2">
   <link rel="stylesheet" href="topbar-panels.css?v=1">
   <link rel="stylesheet" href="notification-overlay-fix.css?v=2">
   <link rel="stylesheet" href="expired-panel-center.css?v=3">
@@ -105,7 +105,10 @@
   <dialog id="inventoryExportDialog" class="inventory-export-dialog">
     <div class="modal-head"><div><p class="eyebrow">STANY MAGAZYNOWE</p><h2>Przygotuj wydruk</h2></div><button type="button" id="closeInventoryExport" class="icon-btn">×</button></div>
     <p class="inventory-export-help">Wybierz kolejność produktów. Ten sam układ będzie widoczny w podglądzie wydruku oraz w pobranym pliku.</p>
-    <label class="inventory-export-select">Ułóż stany według<select id="inventoryExportSort"><option value="category">Kategorii</option><option value="brand">Firm</option><option value="expiry">Terminów ważności</option><option value="alphabetical">Alfabetycznie</option></select></label>
+    <div class="inventory-export-options">
+      <label class="inventory-export-select">Ułóż stany według<select id="inventoryExportSort"><option value="category">Kategorii</option><option value="brand">Firm</option><option value="expiry">Terminów ważności</option><option value="alphabetical">Alfabetycznie</option></select></label>
+      <label class="inventory-export-select">Produktów na stronę<select id="inventoryItemsPerPage"><option value="20">20</option><option value="30">30</option><option value="40" selected>40</option><option value="50">50</option><option value="all">Wszystkie na jednej</option></select></label>
+    </div>
     <div id="inventoryExportPreview" class="inventory-export-preview"></div>
     <div class="form-actions"><button type="button" id="downloadInventoryCsv" class="button ghost">Pobierz CSV</button><button type="button" id="printInventory" class="button primary">Podgląd / drukuj</button></div>
   </dialog>
@@ -189,7 +192,8 @@
     <p id="quickFillSearchStatus" class="quick-fill-search-status" hidden></p>
     <p id="quickFillCount" class="quick-fill-count"></p>
     <div id="quickFillList" class="quick-fill-list"></div>
-    <div class="form-actions"><button type="button" id="closeQuickFillBottom" class="button ghost">Zamknij</button></div>
+    <p class="quick-fill-resize-hint">Na komputerze możesz przeciągnąć prawy dolny róg okna, aby ręcznie zmienić jego rozmiar.</p>
+    <div class="form-actions quick-fill-footer"><button type="button" id="saveAllQuickFill" class="button primary">✓ Zapisz wszystkie zmiany</button><button type="button" id="closeQuickFillBottom" class="button ghost">Zamknij</button></div>
   </dialog>
   <datalist id="brandOptions"></datalist>
   <dialog id="selgrosDialog" class="selgros-dialog">
@@ -756,7 +760,7 @@
   <script src="user-panel.js" defer></script>
   <script src="loading-indicator.js" defer></script>
   <script src="youtube.js" defer></script>
-  <script src="quick-fill.js?v=6" defer></script>
+  <script src="quick-fill.js?v=7" defer></script>
   <script src="notifications.js" defer></script>
   <script src="expired-products.js" defer></script>
   <script src="inventory-check.js?v=1" defer></script>
