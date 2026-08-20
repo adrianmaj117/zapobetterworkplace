@@ -19,9 +19,9 @@
     const header = document.createElement('div');
     header.className = 'nearest-heading';
     nearestTitle.before(header); header.append(nearestTitle);
-    header.insertAdjacentHTML('beforeend', `<div class="nearest-controls"><label>Pokaż<select id="nearestLimit"><option value="3">3</option><option value="5">5</option><option value="10">10</option></select></label><button type="button" id="showHiddenNearest" class="small-btn" hidden>Pokaż ukryte</button></div>`);
+    header.insertAdjacentHTML('beforeend', `<div class="nearest-controls"><label>Pokaż<select id="nearestLimit"><option value="0">0 — ukryj wszystkie</option><option value="3">3</option><option value="5">5</option><option value="10">10</option></select></label><button type="button" id="showHiddenNearest" class="small-btn" hidden>Pokaż ukryte</button></div>`);
     const select = document.querySelector('#nearestLimit');
-    select.value = [3, 5, 10].includes(nearestLimit) ? String(nearestLimit) : '10';
+    select.value = [0, 3, 5, 10].includes(nearestLimit) ? String(nearestLimit) : '10';
     nearestLimit = Number(select.value);
 
     nearest = function renderNearestEnhanced() {
@@ -29,7 +29,7 @@
         .filter(product => Number(product.quantity || 0) > 0 && product.expiration_date && !hiddenNearest.has(Number(product.id)))
         .sort((a, b) => a.expiration_date.localeCompare(b.expiration_date) || a.name.localeCompare(b.name, 'pl'))
         .slice(0, nearestLimit);
-      nearestBox.innerHTML = products.length ? products.map(product => `<article class="nearest-card" data-nearest-id="${product.id}">
+      nearestBox.innerHTML = nearestLimit === 0 ? '' : products.length ? products.map(product => `<article class="nearest-card" data-nearest-id="${product.id}">
         <div class="nearest-product-image" style="background-image:url('${photoFor(product)}')"></div>
         <div><p>${esc(product.category)}</p><h3>${esc(product.name)}</h3><p><b>${date(product.expiration_date)}</b> · ${product.quantity} ${esc(product.unit)}</p></div>
         <button type="button" class="nearest-hide" data-hide-nearest="${product.id}" title="Ukryj ten produkt z listy">Ukryj</button>

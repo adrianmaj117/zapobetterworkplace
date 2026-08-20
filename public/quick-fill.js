@@ -29,7 +29,7 @@
     const needs = selected();
     return (needs.expiry && !product.expiration_date)
       || (needs.barcode && !product.barcode)
-      || (needs.backupBarcode && Number(product.package_barcode_count || 0) < 1)
+      || needs.backupBarcode
       || (needs.photo && !product.has_image);
   };
 
@@ -38,7 +38,7 @@
     return [
       needs.expiry && !product.expiration_date ? 'brak terminu' : '',
       needs.barcode && !product.barcode ? 'brak kodu głównego' : '',
-      needs.backupBarcode && Number(product.package_barcode_count || 0) < 1 ? 'brak kodu opakowania' : '',
+      needs.backupBarcode && !product.package_barcode ? 'brak kodu opakowania' : '',
       needs.photo && !product.has_image ? 'brak zdjęcia' : ''
     ].filter(Boolean);
   };
@@ -58,8 +58,8 @@
     const barcodeField = wants.barcode && !product.barcode
       ? `<label>Kod główny<div class="quick-fill-barcode"><input id="quickBarcode-${product.id}" name="barcode" inputmode="numeric" autocomplete="off" placeholder="Zeskanuj lub wpisz"><button type="button" class="small-btn" data-scan-barcode-for="quickBarcode-${product.id}">▥ Skanuj</button></div></label>`
       : '';
-    const backupBarcodeField = wants.backupBarcode && Number(product.package_barcode_count || 0) < 1
-      ? `<div class="quick-fill-package-fields"><label>Kod opakowania zbiorczego<div class="quick-fill-barcode"><input id="quickBackupBarcode-${product.id}" name="backup_barcode" inputmode="numeric" autocomplete="off" placeholder="Zeskanuj kod kartonu lub paczki"><button type="button" class="small-btn" data-scan-barcode-for="quickBackupBarcode-${product.id}">▥ Skanuj</button></div></label><label>Sztuk w jednym opakowaniu<input name="package_multiplier" type="number" min="2" step="1" placeholder="np. 20"></label></div>`
+    const backupBarcodeField = wants.backupBarcode
+      ? `<div class="quick-fill-package-fields"><input type="hidden" name="package_barcode_id" value="${Number(product.package_barcode_id || 0)}"><label>Kod opakowania zbiorczego<div class="quick-fill-barcode"><input id="quickBackupBarcode-${product.id}" name="backup_barcode" inputmode="numeric" autocomplete="off" placeholder="Zeskanuj kod kartonu lub paczki" value="${esc(product.package_barcode || '')}"><button type="button" class="small-btn" data-scan-barcode-for="quickBackupBarcode-${product.id}">▥ Skanuj</button></div>${product.package_barcode ? `<small class="quick-fill-current-code">Zapisany kod: ${esc(product.package_barcode)}</small>` : ''}</label><label>Sztuk w jednym opakowaniu<input name="package_multiplier" type="number" min="2" step="1" placeholder="np. 20" value="${product.package_multiplier ? Number(product.package_multiplier) : ''}"></label></div>`
       : '';
     return `<form class="quick-fill-row" data-id="${product.id}" data-dirty="false"><div class="quick-fill-product"><b>${esc(product.name)}</b><small>${esc(product.brand || 'Pozostałe')} · ${product.weight_value ? `${product.weight_value} ${esc(product.weight_unit)}` : 'bez gramatury'}</small><div class="quick-fill-badges">${badges}</div></div><div class="quick-fill-fields">${wants.expiry && !product.expiration_date ? '<label>Termin<input name="expiry" type="date" required></label>' : ''}${barcodeField}${backupBarcodeField}${wants.photo && !product.has_image ? '<label>Zdjęcie<input name="photo" type="file" accept="image/*"></label>' : ''}</div><button type="submit" class="quick-fill-approve" aria-label="Zatwierdź i zapisz" title="Zatwierdź i zapisz"><span>✓</span><b>Zapisz</b></button><p class="quick-fill-saved" role="status" hidden>✓ Zapisano</p></form>`;
   }
@@ -69,7 +69,10 @@
     const products = all
       .filter(product => !excludedCategory(product) && incomplete(product) && (!query || normalize(`${product.name} ${product.brand || ''} ${product.barcode || ''}`).includes(query)))
       .sort((a, b) => categoryName(a).localeCompare(categoryName(b), 'pl') || a.name.localeCompare(b.name, 'pl'));
-    count.textContent = products.length ? `Do uzupełnienia: ${products.length} produktów.` : 'Wszystkie wybrane dane są już uzupełnione.';
+    const packageReview = selected().backupBarcode;
+    count.textContent = products.length
+      ? `${packageReview ? 'Do sprawdzenia / uzupełnienia' : 'Do uzupełnienia'}: ${products.length} produktów.`
+      : 'Wszystkie wybrane dane są już uzupełnione.';
     if (!products.length) {
       list.innerHTML = '<div class="quick-fill-empty">✓ Gotowe — nie ma braków w wybranych polach.</div>';
       return;
@@ -111,16 +114,21 @@
     const enteredExpiry = String(data.get('expiry') || '');
     const enteredBarcode = String(data.get('barcode') || '').trim();
     const backupBarcode = String(data.get('backup_barcode') || '').trim();
+    const packageBarcodeId = Number(data.get('package_barcode_id') || product.package_barcode_id || 0);
     const packageMultiplierText = String(data.get('package_multiplier') || '').trim();
     const packageMultiplier = Number(packageMultiplierText || 0);
     const photo = data.get('photo');
     const hasPhoto = Boolean(photo && photo.size);
-    const hasAnyChange = Boolean(enteredExpiry || enteredBarcode || backupBarcode || packageMultiplierText || hasPhoto);
+    const packageChanged = fields.backupBarcode.checked && (
+      cleanBarcode(backupBarcode) !== cleanBarcode(product.package_barcode || '')
+      || Number(packageMultiplier || 0) !== Number(product.package_multiplier || 0)
+    );
+    const hasAnyChange = Boolean(enteredExpiry || enteredBarcode || packageChanged || hasPhoto);
     if (!hasAnyChange) return false;
 
     if (validateAll && fields.expiry.checked && !product.expiration_date && !enteredExpiry) throw new Error('Wpisz termin ważności.');
     if (validateAll && fields.barcode.checked && !product.barcode && !enteredBarcode) throw new Error('Wpisz lub zeskanuj główny kod kreskowy.');
-    if (validateAll && fields.backupBarcode.checked && Number(product.package_barcode_count || 0) < 1 && !backupBarcode) throw new Error('Wpisz lub zeskanuj kod opakowania zbiorczego.');
+    if (validateAll && fields.backupBarcode.checked && !backupBarcode) throw new Error('Wpisz lub zeskanuj kod opakowania zbiorczego.');
     if (validateAll && fields.photo.checked && !product.has_image && !hasPhoto) throw new Error('Wybierz zdjęcie produktu.');
     if ((backupBarcode && !packageMultiplierText) || (!backupBarcode && packageMultiplierText)) throw new Error('Kod opakowania i liczba sztuk muszą być podane razem.');
     if (backupBarcode && (!Number.isInteger(packageMultiplier) || packageMultiplier < 2)) throw new Error('Podaj, ile pełnych sztuk znajduje się w jednym opakowaniu.');
@@ -146,8 +154,8 @@
         notes: product.notes || '',
         barcode: finalBarcode
       }) });
-      if (backupBarcode) {
-        await api(`/api/products/${product.id}/barcodes`, { method: 'POST', body: JSON.stringify({
+      if (backupBarcode && packageChanged) {
+        await api(packageBarcodeId ? `/api/product-barcodes/${packageBarcodeId}` : `/api/products/${product.id}/barcodes`, { method: packageBarcodeId ? 'PUT' : 'POST', body: JSON.stringify({
           barcode: backupBarcode,
           quantity_multiplier: packageMultiplier,
           package_name: `Opakowanie zbiorcze ${packageMultiplier} szt.`
@@ -157,7 +165,11 @@
 
       if (enteredExpiry) product.expiration_date = enteredExpiry;
       if (enteredBarcode) product.barcode = enteredBarcode;
-      if (backupBarcode) product.package_barcode_count = Number(product.package_barcode_count || 0) + 1;
+      if (backupBarcode && packageChanged) {
+        product.package_barcode = cleanBarcode(backupBarcode);
+        product.package_multiplier = packageMultiplier;
+        product.package_barcode_count = Math.max(1, Number(product.package_barcode_count || 0));
+      }
       if (hasPhoto) product.has_image = true;
       form.dataset.dirty = 'false';
       form.classList.remove('is-dirty');

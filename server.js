@@ -1012,6 +1012,10 @@ app.get('/api/products', (req, res) => {
       weight_grams, weight_value, weight_unit, brand, received_date, barcode,
       (SELECT COUNT(*) FROM product_barcodes pb WHERE pb.product_id=products.id) AS extra_barcode_count,
       (SELECT COUNT(*) FROM product_barcodes pb WHERE pb.product_id=products.id AND pb.quantity_multiplier > 1) AS package_barcode_count,
+      (SELECT pb.id FROM product_barcodes pb WHERE pb.product_id=products.id AND pb.quantity_multiplier > 1 ORDER BY pb.id ASC LIMIT 1) AS package_barcode_id,
+      (SELECT pb.barcode FROM product_barcodes pb WHERE pb.product_id=products.id AND pb.quantity_multiplier > 1 ORDER BY pb.id ASC LIMIT 1) AS package_barcode,
+      (SELECT pb.quantity_multiplier FROM product_barcodes pb WHERE pb.product_id=products.id AND pb.quantity_multiplier > 1 ORDER BY pb.id ASC LIMIT 1) AS package_multiplier,
+      (SELECT pb.package_name FROM product_barcodes pb WHERE pb.product_id=products.id AND pb.quantity_multiplier > 1 ORDER BY pb.id ASC LIMIT 1) AS package_name,
       CASE WHEN image_data IS NOT NULL AND image_data <> '' THEN 1 ELSE 0 END AS has_image
     FROM products
     WHERE name LIKE @search AND (@category = '' OR category = @category)
@@ -1101,9 +1105,15 @@ app.post('/api/products/:id/barcodes', (req, res) => {
   if (!product) return res.status(404).json({ error: 'Nie znaleziono produktu.' });
   try {
     const code = barcodePackage(req.body);
-    if (barcodeBelongsToAnotherProduct(code.barcode, product.id)) return res.status(409).json({ error: 'Ten kod jest już przypisany do innego produktu albo opakowania.' });
     const existingPrimary = cleanBarcode(product.barcode) === code.barcode;
     if (existingPrimary) return res.status(409).json({ error: 'To jest już główny kod pojedynczej sztuki.' });
+    const existingForProduct = db.prepare('SELECT * FROM product_barcodes WHERE barcode=? AND product_id=?').get(code.barcode, product.id);
+    if (existingForProduct) {
+      db.prepare(`UPDATE product_barcodes SET quantity_multiplier=?, package_name=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`)
+        .run(code.multiplier, code.packageName, existingForProduct.id);
+      return res.json(db.prepare('SELECT * FROM product_barcodes WHERE id=?').get(existingForProduct.id));
+    }
+    if (barcodeBelongsToAnotherProduct(code.barcode, product.id)) return res.status(409).json({ error: 'Ten kod jest już przypisany do innego produktu albo opakowania.' });
     const result = db.prepare(`INSERT INTO product_barcodes (product_id, barcode, quantity_multiplier, package_name, updated_at)
       VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)`).run(product.id, code.barcode, code.multiplier, code.packageName);
     res.status(201).json(db.prepare('SELECT * FROM product_barcodes WHERE id=?').get(result.lastInsertRowid));
@@ -1115,7 +1125,25 @@ app.put('/api/product-barcodes/:id', (req, res) => {
   if (!existing) return res.status(404).json({ error: 'Nie znaleziono kodu.' });
   try {
     const code = barcodePackage(req.body);
-    if (barcodeBelongsToAnotherProduct(code.barcode, existing.product_id, existing.id)) return res.status(409).json({ error: 'Ten kod jest już przypisany do innego produktu albo opakowania.' });
+    const product = productById(existing.product_id);
+    if (cleanBarcode(product?.barcode) === code.barcode) return res.status(409).json({ error: 'To jest już główny kod pojedynczej sztuki.' });
+    const usedByOtherProduct = db.prepare('SELECT id FROM products WHERE barcode=? AND id<>?').get(code.barcode, existing.product_id)
+      || db.prepare('SELECT id FROM product_barcodes WHERE barcode=? AND product_id<>?').get(code.barcode, existing.product_id);
+    if (usedByOtherProduct) return res.status(409).json({ error: 'Ten kod jest już przypisany do innego produktu albo opakowania.' });
+    const duplicateForProduct = db.prepare('SELECT * FROM product_barcodes WHERE barcode=? AND product_id=? AND id<>?').get(code.barcode, existing.product_id, existing.id);
+    if (duplicateForProduct) {
+      try {
+        db.exec('BEGIN IMMEDIATE');
+        db.prepare(`UPDATE product_barcodes SET quantity_multiplier=?, package_name=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`)
+          .run(code.multiplier, code.packageName, duplicateForProduct.id);
+        db.prepare('DELETE FROM product_barcodes WHERE id=?').run(existing.id);
+        db.exec('COMMIT');
+      } catch (error) {
+        try { db.exec('ROLLBACK'); } catch (_) {}
+        throw error;
+      }
+      return res.json(db.prepare('SELECT * FROM product_barcodes WHERE id=?').get(duplicateForProduct.id));
+    }
     db.prepare(`UPDATE product_barcodes SET barcode=?, quantity_multiplier=?, package_name=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`)
       .run(code.barcode, code.multiplier, code.packageName, existing.id);
     res.json(db.prepare('SELECT * FROM product_barcodes WHERE id=?').get(existing.id));
