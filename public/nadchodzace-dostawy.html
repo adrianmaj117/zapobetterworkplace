@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link rel="icon" type="image/png" href="/assets/daily-fruits-logo.png?v=3">
+  <meta name="theme-color" content="#146b52">
+  <title>Nadchodzące Dostawy | ZapoBetterWorkPlace</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="warehouse.css">
+  <link rel="stylesheet" href="dark-mode.css">
+  <link rel="stylesheet" href="nadchodzace-dostawy.css?v=1">
+  <script src="dark-mode.js"></script>
+  <script src="nadchodzace-dostawy.js?v=1" defer></script>
+</head>
+<body class="warehouse-body upcoming-body">
+  <div class="warehouse-background" aria-hidden="true"></div>
+  <header class="topbar upcoming-topbar">
+    <a class="brand upcoming-brand" href="/magazyn.html" aria-label="Wróć do magazynu">
+      <img class="header-logo" src="assets/daily-fruits-logo.png" alt="Daily Fruits by BetterWorkPlace">
+      <strong>ZapoBetterWorkPlace</strong>
+    </a>
+    <div class="upcoming-top-actions">
+      <button type="button" id="themeToggle" class="small-btn" data-theme-auto-label></button>
+      <a class="small-btn upcoming-back" href="/magazyn.html">← Wróć do magazynu</a>
+    </div>
+  </header>
+
+  <main class="upcoming-main">
+    <section id="deliveriesView">
+      <div class="upcoming-hero">
+        <div>
+          <p class="eyebrow">PLANOWANE PRZYJĘCIA</p>
+          <h1>Nadchodzące Dostawy</h1>
+          <p>Przygotuj listę towaru od dostawcy i sprawdzaj, jaka część zamówienia już dojechała.</p>
+        </div>
+        <button type="button" id="newDelivery" class="button primary">＋ Dodaj nadchodzącą dostawę</button>
+      </div>
+      <div id="deliveryCards" class="upcoming-cards" aria-live="polite"></div>
+    </section>
+
+    <section id="deliveryView" hidden>
+      <button type="button" id="backToDeliveries" class="small-btn">← Wszystkie nadchodzące dostawy</button>
+      <div id="deliveryHeader" class="delivery-detail-head"></div>
+      <div class="detail-toolbar">
+        <button type="button" id="editSupplier" class="button ghost">Edytuj dostawcę</button>
+        <button type="button" id="addDeliveryProduct" class="button primary">＋ Dodaj produkt</button>
+      </div>
+      <div id="deliveryProducts" class="upcoming-products"></div>
+    </section>
+  </main>
+
+  <dialog id="supplierDialog" class="upcoming-dialog">
+    <form id="supplierForm" method="dialog">
+      <div class="modal-head"><div><p class="eyebrow">NADCHODZĄCA DOSTAWA</p><h2 id="supplierTitle">Nowa dostawa</h2></div><button type="button" class="icon-btn" data-close="supplierDialog">×</button></div>
+      <label>Firma / dostawca<input id="supplierName" name="supplier" list="supplierOptions" maxlength="160" placeholder="np. Hebar, Sante, Mlekovita" required autocomplete="off"></label>
+      <datalist id="supplierOptions"></datalist>
+      <div class="form-actions"><button type="button" class="button ghost" data-close="supplierDialog">Anuluj</button><button class="button primary">Zapisz i przejdź dalej</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="productPickerDialog" class="upcoming-dialog product-picker-dialog">
+    <div>
+      <div class="modal-head"><div><p class="eyebrow">PRODUKT W DOSTAWIE</p><h2>Dodaj produkt</h2></div><button type="button" class="icon-btn" data-close="productPickerDialog">×</button></div>
+      <label class="product-search-label">Wyszukaj w magazynie<input id="productSearch" type="search" placeholder="Zacznij wpisywać, np. Jogurt" autocomplete="off"></label>
+      <div id="productSuggestions" class="product-suggestions"></div>
+      <form id="selectedProductForm" class="selected-product" hidden>
+        <img id="selectedProductImage" alt="Zdjęcie wybranego produktu">
+        <div class="selected-product-copy"><small id="selectedProductMeta"></small><h3 id="selectedProductName"></h3><p id="selectedProductExtra"></p></div>
+        <label>Planowana ilość<input id="selectedPlanned" type="number" min="0.01" step="0.01" required></label>
+        <button class="button primary">Dodaj do dostawy</button>
+      </form>
+      <div class="new-product-prompt"><span>Nie ma tego artykułu w bazie?</span><button type="button" id="openNewProduct" class="button ghost">＋ Dodaj nowy produkt</button></div>
+    </div>
+  </dialog>
+
+  <dialog id="newProductDialog" class="upcoming-dialog new-product-dialog">
+    <form id="newProductForm">
+      <div class="modal-head"><div><p class="eyebrow">WSPÓLNA BAZA MAGAZYNU</p><h2>Nowy produkt</h2></div><button type="button" class="icon-btn" data-close="newProductDialog">×</button></div>
+      <p class="dialog-help">Produkt zostanie zapisany w głównej bazie i będzie dostępny także w magazynie, skanerze oraz kolejnych dostawach.</p>
+      <div class="form-grid">
+        <label class="full">Nazwa produktu<input name="name" required maxlength="255" placeholder="np. Jogurt naturalny 150 g"></label>
+        <label>Firma / producent<input name="brand" maxlength="120" placeholder="np. Mlekovita"></label>
+        <label>Kategoria<select name="category" id="newProductCategory" required></select></label>
+        <label>Jednostka<select name="unit"><option value="szt.">szt.</option><option value="opak.">opak.</option><option value="kg">kg</option><option value="l">l</option></select></label>
+        <label>Wartość gramatury<input name="weight_value" type="number" min="0" step="0.01" placeholder="np. 150"></label>
+        <label>Gramatura<select name="weight_unit"><option value="">Bez gramatury</option><option value="g">g</option><option value="kg">kg</option><option value="ml">ml</option><option value="l">l</option></select></label>
+        <label class="full">Kod kreskowy (opcjonalnie)<input name="barcode" inputmode="numeric" maxlength="64"></label>
+        <label class="full">Zdjęcie produktu (opcjonalnie)<input name="image" type="file" accept="image/*" capture="environment"></label>
+        <label class="full">Planowana ilość w tej dostawie<input name="planned_quantity" type="number" min="0.01" step="0.01" required></label>
+      </div>
+      <div class="form-actions"><button type="button" class="button ghost" data-close="newProductDialog">Anuluj</button><button class="button primary">Zapisz produkt i dodaj</button></div>
+    </form>
+  </dialog>
+
+  <div id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

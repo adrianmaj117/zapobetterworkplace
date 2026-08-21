@@ -46,6 +46,7 @@
   <link rel="stylesheet" href="warehouse-enhancements.css?v=3">
   <link rel="stylesheet" href="inventory-check.css?v=1">
   <link rel="stylesheet" href="shopping-product-link.css?v=1">
+  <link rel="stylesheet" href="upcoming-nav.css?v=1">
   <script src="dark-mode.js"></script>
   <script src="pwa-install.js" defer></script>
   <style>
@@ -86,6 +87,7 @@
       <strong class="brand-one-line">ZapoBetterWorkPlace</strong>
     </button>
     <div class="expired-wrap"><button type="button" id="expiredOpen" class="small-btn expired-open" aria-expanded="false" title="Produkty po terminie">❗ <span id="expiredCount" hidden>0</span></button><section id="expiredPanel" class="expired-panel" hidden><header><b>Produkty po terminie</b><button type="button" id="expiredClose" aria-label="Zamknij">×</button></header><p class="expired-help">Usuń tylko produkty lub partie, które faktycznie zostały zdjęte z magazynu.</p><div id="expiredList"></div></section></div>
+    <a href="/nadchodzace-dostawy.html" class="small-btn upcoming-nav" data-cap="delivery" title="Nadchodzące Dostawy"><span aria-hidden="true">🚚</span><b>Nadchodzące Dostawy</b></a>
     <button type="button" id="themeToggle" class="small-btn theme-toggle-visible" data-theme-auto-label title="Zmień tryb jasny / ciemny"></button>
     <button type="button" id="quickFillOpen" class="small-btn quick-fill-open" title="Szybkie uzupełnianie danych">⚡ Uzupełnij dane</button>
     <div class="notifications-wrap"><button type="button" id="notificationsOpen" class="small-btn notifications-open" aria-expanded="false" title="Powiadomienia">🔔 <span id="notificationCount" hidden>0</span></button><section id="notificationsPanel" class="notifications-panel" hidden><header><b>Powiadomienia</b><button type="button" id="notificationsReadAll">Oznacz jako przeczytane</button></header><div id="notificationsList" class="notifications-list"></div></section></div>

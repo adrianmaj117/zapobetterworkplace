@@ -234,6 +234,36 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_delivery_scan_events_delivery ON delivery_scan_events(delivery_id, id);
 `);
+
+// Zapowiedzi dostaw są planem i nie zmieniają stanów magazynowych. Korzystają
+// jednak z tych samych produktów co cały magazyn, dzięki czemu nic nie jest
+// dublowane. Faktyczne przyjęcie towaru nadal obsługuje moduł „Dostawa”.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS upcoming_deliveries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    supplier TEXT NOT NULL,
+    created_by_user_id INTEGER,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(created_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+  );
+  CREATE TABLE IF NOT EXISTS upcoming_delivery_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    upcoming_delivery_id INTEGER NOT NULL,
+    product_id INTEGER NOT NULL,
+    planned_quantity REAL NOT NULL CHECK(planned_quantity > 0),
+    received_quantity REAL NOT NULL DEFAULT 0 CHECK(received_quantity >= 0),
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(upcoming_delivery_id, product_id),
+    FOREIGN KEY(upcoming_delivery_id) REFERENCES upcoming_deliveries(id) ON DELETE CASCADE,
+    FOREIGN KEY(product_id) REFERENCES products(id) ON DELETE RESTRICT
+  );
+  CREATE INDEX IF NOT EXISTS idx_upcoming_delivery_items_delivery
+    ON upcoming_delivery_items(upcoming_delivery_id, id);
+  CREATE INDEX IF NOT EXISTS idx_upcoming_delivery_items_product
+    ON upcoming_delivery_items(product_id);
+`);
 for (const [name, definition] of [
   ['quantity_multiplier', 'REAL NOT NULL DEFAULT 1'],
   ['package_count', 'REAL NOT NULL DEFAULT 1']
@@ -1026,6 +1056,133 @@ app.get('/api/products', (req, res) => {
 app.get('/api/products/expired', (req, res) => {
   const today = new Date().toISOString().slice(0, 10);
   res.json(db.prepare(`SELECT id, name, category, brand, unit, quantity, expiration_date FROM products WHERE quantity>0 AND expiration_date IS NOT NULL AND expiration_date<? ORDER BY expiration_date ASC, name COLLATE NOCASE ASC`).all(today));
+});
+
+function upcomingDeliveryProgress(planned, received) {
+  const plannedTotal = Math.max(0, Number(planned || 0));
+  const receivedTotal = Math.max(0, Number(received || 0));
+  const progress = plannedTotal > 0 ? Math.min(100, Math.round((receivedTotal / plannedTotal) * 100)) : 0;
+  const status = progress === 0 ? 'Oczekuje' : progress >= 100 ? 'Kompletna' : 'Częściowo odebrana';
+  return { planned_total: plannedTotal, received_total: receivedTotal, progress, status };
+}
+
+function upcomingDeliverySummary(row) {
+  return {
+    ...row,
+    product_count: Number(row.product_count || 0),
+    ...upcomingDeliveryProgress(row.planned_total, row.received_total)
+  };
+}
+
+function upcomingDeliveryById(id) {
+  const delivery = db.prepare(`SELECT d.*, u.display_name AS created_by_name,
+      COUNT(i.id) AS product_count,
+      COALESCE(SUM(i.planned_quantity), 0) AS planned_total,
+      COALESCE(SUM(i.received_quantity), 0) AS received_total
+    FROM upcoming_deliveries d
+    LEFT JOIN users u ON u.id=d.created_by_user_id
+    LEFT JOIN upcoming_delivery_items i ON i.upcoming_delivery_id=d.id
+    WHERE d.id=? GROUP BY d.id`).get(id);
+  if (!delivery) return null;
+  const result = upcomingDeliverySummary(delivery);
+  result.items = db.prepare(`SELECT i.id, i.upcoming_delivery_id, i.product_id,
+      i.planned_quantity, i.received_quantity, i.created_at, i.updated_at,
+      p.name, p.category, p.brand, p.unit, p.quantity AS stock_quantity,
+      p.weight_value, p.weight_unit, p.barcode,
+      CASE WHEN p.image_data IS NOT NULL AND p.image_data<>'' THEN 1 ELSE 0 END AS has_image
+    FROM upcoming_delivery_items i
+    JOIN products p ON p.id=i.product_id
+    WHERE i.upcoming_delivery_id=?
+    ORDER BY p.name COLLATE NOCASE ASC, i.id ASC`).all(id);
+  return result;
+}
+
+app.get('/api/upcoming-deliveries', allow('delivery'), (req, res) => {
+  const rows = db.prepare(`SELECT d.*, u.display_name AS created_by_name,
+      COUNT(i.id) AS product_count,
+      COALESCE(SUM(i.planned_quantity), 0) AS planned_total,
+      COALESCE(SUM(i.received_quantity), 0) AS received_total
+    FROM upcoming_deliveries d
+    LEFT JOIN users u ON u.id=d.created_by_user_id
+    LEFT JOIN upcoming_delivery_items i ON i.upcoming_delivery_id=d.id
+    GROUP BY d.id ORDER BY d.updated_at DESC, d.id DESC`).all();
+  res.json(rows.map(upcomingDeliverySummary));
+});
+
+app.get('/api/upcoming-deliveries/:id', allow('delivery'), (req, res) => {
+  const delivery = upcomingDeliveryById(Number(req.params.id));
+  if (!delivery) return res.status(404).json({ error: 'Nie znaleziono tej nadchodzącej dostawy.' });
+  res.json(delivery);
+});
+
+app.post('/api/upcoming-deliveries', allow('delivery'), (req, res) => {
+  const supplier = String(req.body?.supplier || '').trim().slice(0, 160);
+  if (!supplier) return res.status(400).json({ error: 'Podaj nazwę firmy lub dostawcy.' });
+  const result = db.prepare(`INSERT INTO upcoming_deliveries
+    (supplier, created_by_user_id, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)`)
+    .run(supplier, req.user.id);
+  res.status(201).json(upcomingDeliveryById(Number(result.lastInsertRowid)));
+});
+
+app.put('/api/upcoming-deliveries/:id', allow('delivery'), (req, res) => {
+  const id = Number(req.params.id);
+  const supplier = String(req.body?.supplier || '').trim().slice(0, 160);
+  if (!supplier) return res.status(400).json({ error: 'Podaj nazwę firmy lub dostawcy.' });
+  const result = db.prepare('UPDATE upcoming_deliveries SET supplier=?, updated_at=CURRENT_TIMESTAMP WHERE id=?').run(supplier, id);
+  if (!result.changes) return res.status(404).json({ error: 'Nie znaleziono tej nadchodzącej dostawy.' });
+  res.json(upcomingDeliveryById(id));
+});
+
+app.delete('/api/upcoming-deliveries/:id', allow('delivery'), (req, res) => {
+  const result = db.prepare('DELETE FROM upcoming_deliveries WHERE id=?').run(Number(req.params.id));
+  if (!result.changes) return res.status(404).json({ error: 'Nie znaleziono tej nadchodzącej dostawy.' });
+  res.status(204).end();
+});
+
+app.post('/api/upcoming-deliveries/:id/items', allow('delivery'), (req, res) => {
+  const deliveryId = Number(req.params.id);
+  const productId = productIdFrom(req.body?.product_id);
+  const planned = Number(req.body?.planned_quantity);
+  if (!db.prepare('SELECT id FROM upcoming_deliveries WHERE id=?').get(deliveryId)) return res.status(404).json({ error: 'Nie znaleziono tej nadchodzącej dostawy.' });
+  if (!productId || !productById(productId)) return res.status(404).json({ error: 'Nie znaleziono wybranego produktu.' });
+  if (!Number.isFinite(planned) || planned <= 0) return res.status(400).json({ error: 'Podaj planowaną ilość większą od zera.' });
+  db.exec('BEGIN');
+  try {
+    db.prepare(`INSERT INTO upcoming_delivery_items
+      (upcoming_delivery_id, product_id, planned_quantity, received_quantity, updated_at)
+      VALUES (?, ?, ?, 0, CURRENT_TIMESTAMP)
+      ON CONFLICT(upcoming_delivery_id, product_id) DO UPDATE SET
+        planned_quantity=upcoming_delivery_items.planned_quantity+excluded.planned_quantity,
+        updated_at=CURRENT_TIMESTAMP`).run(deliveryId, productId, planned);
+    db.prepare('UPDATE upcoming_deliveries SET updated_at=CURRENT_TIMESTAMP WHERE id=?').run(deliveryId);
+    db.exec('COMMIT');
+  } catch (error) { db.exec('ROLLBACK'); throw error; }
+  res.status(201).json(upcomingDeliveryById(deliveryId));
+});
+
+app.put('/api/upcoming-delivery-items/:id', allow('delivery'), (req, res) => {
+  const id = Number(req.params.id);
+  const existing = db.prepare('SELECT * FROM upcoming_delivery_items WHERE id=?').get(id);
+  if (!existing) return res.status(404).json({ error: 'Nie znaleziono tego produktu w dostawie.' });
+  const planned = Number(req.body?.planned_quantity);
+  const received = Number(req.body?.received_quantity);
+  if (!Number.isFinite(planned) || planned <= 0 || !Number.isFinite(received) || received < 0) return res.status(400).json({ error: 'Sprawdź ilość planowaną i odebraną.' });
+  db.exec('BEGIN');
+  try {
+    db.prepare(`UPDATE upcoming_delivery_items SET planned_quantity=?, received_quantity=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`)
+      .run(planned, received, id);
+    db.prepare('UPDATE upcoming_deliveries SET updated_at=CURRENT_TIMESTAMP WHERE id=?').run(existing.upcoming_delivery_id);
+    db.exec('COMMIT');
+  } catch (error) { db.exec('ROLLBACK'); throw error; }
+  res.json(upcomingDeliveryById(existing.upcoming_delivery_id));
+});
+
+app.delete('/api/upcoming-delivery-items/:id', allow('delivery'), (req, res) => {
+  const existing = db.prepare('SELECT upcoming_delivery_id FROM upcoming_delivery_items WHERE id=?').get(Number(req.params.id));
+  if (!existing) return res.status(404).json({ error: 'Nie znaleziono tego produktu w dostawie.' });
+  db.prepare('DELETE FROM upcoming_delivery_items WHERE id=?').run(Number(req.params.id));
+  db.prepare('UPDATE upcoming_deliveries SET updated_at=CURRENT_TIMESTAMP WHERE id=?').run(existing.upcoming_delivery_id);
+  res.status(204).end();
 });
 
 function deliveryById(id) {
