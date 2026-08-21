@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#146b52">
+  <title>Planer dostaw | ZapoBetterWorkPlace</title>
+  <link rel="icon" href="assets/daily-fruits-logo.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Fraunces:opsz,wght@9..144,600;9..144,700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="planer-dostaw.css?v=2">
+  <script src="dark-mode.js"></script>
+</head>
+<body>
+  <header class="planner-topbar">
+    <a class="planner-brand" href="planer-dostaw.html" aria-label="Planer dostaw — strona główna">
+      <img src="assets/daily-fruits-logo.png" alt="Daily Fruits">
+      <span><strong>ZapoBetterWorkPlace</strong><small>Planer dostaw</small></span>
+    </a>
+    <div class="topbar-actions">
+      <button id="themeToggle" class="quiet-button" data-theme-auto-label type="button">◐ Tryb ciemny</button>
+      <div class="account-menu-wrap">
+        <button id="accountMenuButton" class="account-button" type="button" aria-expanded="false">
+          <span class="account-avatar">P</span>
+          <span><strong>Paweł</strong><small>Kierowca</small></span>
+          <span aria-hidden="true">⌄</span>
+        </button>
+        <div id="accountMenu" class="account-menu" hidden>
+          <button id="openSettings" type="button"><span>⚙</span><span><strong>Dostosuj planer</strong><small>Zmień stawki rozliczenia</small></span></button>
+          <button id="logout" type="button"><span>↪</span><span><strong>Wyloguj się</strong><small>Zakończ pracę</small></span></button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="planner-shell">
+    <section class="planner-hero">
+      <div>
+        <p class="eyebrow">PLANER KIEROWCY</p>
+        <h1>Twoje dostawy.<br><em>Jasno rozliczone.</em></h1>
+        <p class="hero-copy">Zapisuj wyniki każdego dnia. Czas pracy i należność wyliczą się automatycznie.</p>
+      </div>
+      <button id="quickAdd" class="primary-button hero-button" type="button"><span>＋</span> Szybki wpis</button>
+    </section>
+
+    <section class="month-panel" aria-labelledby="monthsTitle">
+      <div class="section-heading">
+        <div><p class="eyebrow">ROK <span id="yearLabel"></span></p><h2 id="monthsTitle">Wybierz miesiąc</h2></div>
+        <div class="year-controls"><button id="prevYear" type="button" aria-label="Poprzedni rok">←</button><button id="currentYear" type="button">Dzisiaj</button><button id="nextYear" type="button" aria-label="Następny rok">→</button></div>
+      </div>
+      <div id="monthGrid" class="month-grid"></div>
+    </section>
+
+    <section class="summary-section" aria-labelledby="selectedMonthTitle">
+      <div class="section-heading summary-heading">
+        <div><p class="eyebrow">PODSUMOWANIE</p><h2 id="selectedMonthTitle">Miesiąc</h2></div>
+        <button id="addFullEntry" class="secondary-button" type="button">＋ Dodaj dzień</button>
+      </div>
+      <div class="summary-grid">
+        <article><span>Dni pracy</span><strong id="sumDays">0</strong><small>zapisanych dni</small></article>
+        <article><span>Dostawy</span><strong id="sumDeliveries">0</strong><small>łącznie</small></article>
+        <article><span>Kilometry</span><strong id="sumKilometers">0 km</strong><small>przejechane</small></article>
+        <article><span>Kilogramy</span><strong id="sumKilograms">0 kg</strong><small>dostarczone</small></article>
+        <article><span>Czas pracy</span><strong id="sumHours">0 h</strong><small>bez dodatkowych</small></article>
+        <article class="money-summary"><span>Kwota za miesiąc</span><strong id="sumAmount">0,00 zł</strong><small>według zapisanych stawek</small></article>
+      </div>
+    </section>
+
+    <section class="entries-section" aria-labelledby="entriesTitle">
+      <div class="section-heading"><div><p class="eyebrow">DZIENNE WYNIKI</p><h2 id="entriesTitle">Zapisane dni</h2></div></div>
+      <div id="entriesEmpty" class="empty-state" hidden><div>🚚</div><h3>Ten miesiąc jest jeszcze pusty</h3><p>Dodaj pierwszy dzień pracy przyciskiem „Szybki wpis”.</p></div>
+      <div id="entriesTableWrap" class="entries-table-wrap">
+        <table class="entries-table">
+          <thead><tr><th>Dzień</th><th>Rozpoczęcie</th><th>Dostawy</th><th>Kilometry</th><th>Kilogramy</th><th>Zakończenie</th><th>Czas pracy</th><th>Dodatkowe</th><th>Kwota</th><th></th></tr></thead>
+          <tbody id="entriesBody"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="entryDialog" class="planner-dialog">
+    <form id="entryForm">
+      <div class="dialog-head"><div><p class="eyebrow">DZIENNY WYNIK</p><h2 id="entryDialogTitle">Szybki wpis</h2></div><button class="close-button" type="button" data-close-entry aria-label="Zamknij">×</button></div>
+      <input id="entryId" type="hidden">
+      <div class="entry-form-grid">
+        <label class="wide">Dzień<input id="workDate" type="date" required></label>
+        <label>Godz. rozpoczęcia<input id="startTime" type="time"></label>
+        <label>Godz. zakończenia<input id="endTime" type="time"></label>
+        <label>Dostawy<input id="deliveries" type="number" min="0" step="1" value="0" required inputmode="decimal"></label>
+        <label>Kilometry<input id="kilometers" type="number" min="0" step="0.01" value="0" required inputmode="decimal"></label>
+        <label>Kilogramy<input id="kilograms" type="number" min="0" step="0.01" value="0" required inputmode="decimal"></label>
+        <label>Dodatkowe godziny<input id="extraHours" type="number" min="0" step="0.25" value="0" inputmode="decimal"></label>
+      </div>
+      <div class="calculation-card">
+        <div><span>Czas pracy</span><strong id="workHoursPreview">0 h</strong></div>
+        <div><span>Kwota za dzień</span><strong id="amountPreview">0,00 zł</strong></div>
+        <p id="formulaPreview">Uzupełnij wyniki, aby zobaczyć obliczenie.</p>
+      </div>
+      <div id="entryError" class="form-error" role="alert"></div>
+      <div class="dialog-actions"><button class="ghost-button" type="button" data-close-entry>Anuluj</button><button class="primary-button" type="submit">Zapisz dzień</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="settingsDialog" class="planner-dialog settings-dialog">
+    <form id="settingsForm">
+      <div class="dialog-head"><div><p class="eyebrow">USTAWIENIA</p><h2>Dostosuj planer</h2><p class="dialog-copy">Zmień stawki używane przy kolejnych obliczeniach.</p></div><button class="close-button" type="button" data-close-settings aria-label="Zamknij">×</button></div>
+      <div class="settings-grid">
+        <label><span>Za jedną dostawę</span><div class="money-input"><input id="deliveryRate" type="number" min="0" step="0.01" required><b>zł</b></div></label>
+        <label><span>Za kilometr</span><div class="money-input"><input id="kilometerRate" type="number" min="0" step="0.01" required><b>zł</b></div></label>
+        <label><span>Za kilogram</span><div class="money-input"><input id="kilogramRate" type="number" min="0" step="0.01" required><b>zł</b></div></label>
+        <label><span>Za dodatkową godzinę</span><div class="money-input"><input id="extraHourRate" type="number" min="0" step="0.01" required><b>zł</b></div></label>
+      </div>
+      <div class="settings-example"><span>Przykład</span><strong>24 dostawy × 4,40 zł + 69 km × 0,14 zł + 941,29 kg × 0,14 zł + dodatkowe godziny</strong></div>
+      <div id="settingsError" class="form-error" role="alert"></div>
+      <div class="dialog-actions"><button class="ghost-button" type="button" data-close-settings>Anuluj</button><button class="primary-button" type="submit">Zapisz stawki</button></div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="planner-toast" role="status"></div>
+  <div id="pageLoader" class="page-loader"><img src="assets/daily-fruits-logo.png" alt=""><span>Ładowanie planera…</span></div>
+  <script src="planer-dostaw.js?v=2" defer></script>
+</body>
+</html>

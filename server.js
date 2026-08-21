@@ -173,6 +173,39 @@ function ensureAccount(username, displayName, password, role, hiddenAdmin = 0) {
 ensureAccount('adrian', 'Adrian', 'adrian', 'procurement', 1);
 ensureAccount('szymon', 'Szymon', '4321', 'leader');
 ensureAccount('uzytkownik', 'Użytkownik', 'uzytkownik', 'worker');
+ensureAccount('pawel', 'Paweł', 'pawel', 'worker');
+db.exec(`CREATE TABLE IF NOT EXISTS driver_planner_settings (
+  user_id INTEGER PRIMARY KEY,
+  delivery_rate REAL NOT NULL DEFAULT 4.4 CHECK(delivery_rate >= 0),
+  kilometer_rate REAL NOT NULL DEFAULT 0.14 CHECK(kilometer_rate >= 0),
+  kilogram_rate REAL NOT NULL DEFAULT 0.14 CHECK(kilogram_rate >= 0),
+  extra_hour_rate REAL NOT NULL DEFAULT 27 CHECK(extra_hour_rate >= 0),
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS driver_planner_entries (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  work_date TEXT NOT NULL,
+  start_time TEXT,
+  deliveries REAL NOT NULL DEFAULT 0 CHECK(deliveries >= 0),
+  kilometers REAL NOT NULL DEFAULT 0 CHECK(kilometers >= 0),
+  kilograms REAL NOT NULL DEFAULT 0 CHECK(kilograms >= 0),
+  end_time TEXT,
+  work_hours REAL NOT NULL DEFAULT 0 CHECK(work_hours >= 0),
+  extra_hours REAL NOT NULL DEFAULT 0 CHECK(extra_hours >= 0),
+  daily_amount REAL NOT NULL DEFAULT 0 CHECK(daily_amount >= 0),
+  delivery_rate REAL NOT NULL DEFAULT 4.4,
+  kilometer_rate REAL NOT NULL DEFAULT 0.14,
+  kilogram_rate REAL NOT NULL DEFAULT 0.14,
+  extra_hour_rate REAL NOT NULL DEFAULT 27,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(user_id, work_date),
+  FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_driver_planner_entries_user_date
+  ON driver_planner_entries(user_id, work_date);`);
 db.exec(`CREATE TABLE IF NOT EXISTS purchases (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   supplier TEXT NOT NULL DEFAULT 'SELGROS',
@@ -546,10 +579,18 @@ function authenticated(req) {
   return Boolean(user);
 }
 function isFullAdmin(user) { return user?.role === 'admin' || Boolean(user?.hidden_admin); }
-function roleLabel(user) { return isFullAdmin(user) && user.role === 'procurement' ? 'Zaopatrzenie (ograniczony dostęp)' : ({ admin: 'Admin', procurement: 'Zaopatrzenie', leader: 'Lider', worker: 'Pracownik' })[user?.role] || 'Pracownik'; }
+function roleLabel(user) {
+  if (user?.username === 'pawel') return 'Kierowca';
+  return isFullAdmin(user) && user.role === 'procurement'
+    ? 'Zaopatrzenie (ograniczony dostęp)'
+    : ({ admin: 'Admin', procurement: 'Zaopatrzenie', leader: 'Lider', worker: 'Pracownik' })[user?.role] || 'Pracownik';
+}
 function capabilities(user) {
+  if (user?.username === 'pawel') {
+    return { users: false, finance: false, selgros: false, purchases: false, delivery: false, deliveryHistory: false, inventoryEdit: false, shopping: false, demand: false, inventoryView: false, game: false, driverPlanner: true };
+  }
   const full = isFullAdmin(user); const supply = full || user?.role === 'procurement' || user?.role === 'leader';
-  return { users: full, finance: full, selgros: supply, purchases: supply, delivery: supply, deliveryHistory: supply, inventoryEdit: supply, shopping: supply, demand: Boolean(user), inventoryView: Boolean(user), game: user?.username === 'adrian' };
+  return { users: full, finance: full, selgros: supply, purchases: supply, delivery: supply, deliveryHistory: supply, inventoryEdit: supply, shopping: supply, demand: Boolean(user), inventoryView: Boolean(user), game: user?.username === 'adrian', driverPlanner: false };
 }
 function syncSystemNotifications() {
   const today = new Date().toISOString().slice(0, 10);
@@ -589,11 +630,126 @@ app.post('/api/login', (req, res) => {
 app.use('/api', (req, res, next) => authenticated(req) ? next() : res.status(401).json({ error: 'Zaloguj się, aby zobaczyć magazyn.' }));
 
 app.use('/api', (req, res, next) => {
-  if (req.method !== 'GET' && (capabilities(req.user).inventoryEdit || req.path === '/demand/apply' || req.path.startsWith('/notifications'))) return next();
+  if (!capabilities(req.user).driverPlanner) return next();
+  if (req.path === '/session' || req.path.startsWith('/driver-planner')) return next();
+  return res.status(403).json({ error: 'Konto kierowcy ma dostęp wyłącznie do planera dostaw.' });
+});
+
+app.use('/api', (req, res, next) => {
+  if (req.method !== 'GET' && (capabilities(req.user).inventoryEdit || (capabilities(req.user).driverPlanner && req.path.startsWith('/driver-planner')) || req.path === '/demand/apply' || req.path.startsWith('/notifications'))) return next();
   if (req.user?.role !== 'admin' && req.method !== 'GET') return res.status(403).json({ error: 'To konto ma dostęp wyłącznie do podglądu. Poproś administratora o wykonanie tej zmiany.' });
   next();
 });
 app.get('/api/session', (req, res) => res.json({ user: req.user, capabilities: capabilities(req.user) }));
+
+function driverPlannerSettings(userId) {
+  db.prepare('INSERT OR IGNORE INTO driver_planner_settings (user_id) VALUES (?)').run(userId);
+  return db.prepare('SELECT delivery_rate, kilometer_rate, kilogram_rate, extra_hour_rate, updated_at FROM driver_planner_settings WHERE user_id=?').get(userId);
+}
+function plannerNumber(value, label) {
+  const number = Number(String(value ?? 0).replace(',', '.'));
+  if (!Number.isFinite(number) || number < 0) throw new Error(`${label} musi być liczbą równą lub większą od zera.`);
+  return number;
+}
+function plannerWorkHours(startTime, endTime) {
+  if (!startTime || !endTime) return 0;
+  const pattern = /^([01]\d|2[0-3]):([0-5]\d)$/;
+  const start = pattern.exec(startTime); const end = pattern.exec(endTime);
+  if (!start || !end) throw new Error('Godzina musi mieć format GG:MM.');
+  const startMinutes = Number(start[1]) * 60 + Number(start[2]);
+  let endMinutes = Number(end[1]) * 60 + Number(end[2]);
+  if (endMinutes < startMinutes) endMinutes += 24 * 60;
+  return Math.round(((endMinutes - startMinutes) / 60) * 100) / 100;
+}
+function driverPlannerPayload(userId, body) {
+  const workDate = String(body?.work_date || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(workDate) || Number.isNaN(new Date(`${workDate}T12:00:00`).getTime())) throw new Error('Wybierz prawidłowy dzień pracy.');
+  const startTime = String(body?.start_time || '').trim();
+  const endTime = String(body?.end_time || '').trim();
+  const deliveries = plannerNumber(body?.deliveries, 'Liczba dostaw');
+  const kilometers = plannerNumber(body?.kilometers, 'Liczba kilometrów');
+  const kilograms = plannerNumber(body?.kilograms, 'Liczba kilogramów');
+  const extraHours = plannerNumber(body?.extra_hours, 'Dodatkowe godziny');
+  const workHours = plannerWorkHours(startTime, endTime);
+  const settings = driverPlannerSettings(userId);
+  const dailyAmount = Math.round((deliveries * settings.delivery_rate + kilometers * settings.kilometer_rate + kilograms * settings.kilogram_rate + extraHours * settings.extra_hour_rate) * 100) / 100;
+  return {
+    workDate, startTime: startTime || null, deliveries, kilometers, kilograms, endTime: endTime || null,
+    workHours, extraHours, dailyAmount,
+    deliveryRate: settings.delivery_rate, kilometerRate: settings.kilometer_rate,
+    kilogramRate: settings.kilogram_rate, extraHourRate: settings.extra_hour_rate
+  };
+}
+function driverPlannerEntry(id, userId) {
+  return db.prepare('SELECT * FROM driver_planner_entries WHERE id=? AND user_id=?').get(id, userId);
+}
+
+app.get('/api/driver-planner/settings', allow('driverPlanner'), (req, res) => res.json(driverPlannerSettings(req.user.id)));
+app.put('/api/driver-planner/settings', allow('driverPlanner'), (req, res) => {
+  try {
+    const deliveryRate = plannerNumber(req.body?.delivery_rate, 'Stawka za dostawę');
+    const kilometerRate = plannerNumber(req.body?.kilometer_rate, 'Stawka za kilometr');
+    const kilogramRate = plannerNumber(req.body?.kilogram_rate, 'Stawka za kilogram');
+    const extraHourRate = plannerNumber(req.body?.extra_hour_rate, 'Stawka za dodatkową godzinę');
+    db.prepare(`INSERT INTO driver_planner_settings (user_id, delivery_rate, kilometer_rate, kilogram_rate, extra_hour_rate, updated_at)
+      VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(user_id) DO UPDATE SET delivery_rate=excluded.delivery_rate, kilometer_rate=excluded.kilometer_rate,
+        kilogram_rate=excluded.kilogram_rate, extra_hour_rate=excluded.extra_hour_rate, updated_at=CURRENT_TIMESTAMP`)
+      .run(req.user.id, deliveryRate, kilometerRate, kilogramRate, extraHourRate);
+    res.json(driverPlannerSettings(req.user.id));
+  } catch (error) { res.status(400).json({ error: error.message }); }
+});
+app.get('/api/driver-planner/entries', allow('driverPlanner'), (req, res) => {
+  const month = String(req.query.month || new Date().toISOString().slice(0, 7));
+  if (!/^\d{4}-\d{2}$/.test(month)) return res.status(400).json({ error: 'Nieprawidłowy miesiąc.' });
+  const entries = db.prepare(`SELECT * FROM driver_planner_entries
+    WHERE user_id=? AND substr(work_date, 1, 7)=? ORDER BY work_date ASC`).all(req.user.id, month);
+  const totals = entries.reduce((sum, entry) => {
+    sum.days += 1; sum.deliveries += entry.deliveries; sum.kilometers += entry.kilometers;
+    sum.kilograms += entry.kilograms; sum.work_hours += entry.work_hours;
+    sum.extra_hours += entry.extra_hours; sum.daily_amount += entry.daily_amount;
+    return sum;
+  }, { days: 0, deliveries: 0, kilometers: 0, kilograms: 0, work_hours: 0, extra_hours: 0, daily_amount: 0 });
+  for (const key of Object.keys(totals)) totals[key] = Math.round(totals[key] * 100) / 100;
+  res.json({ month, settings: driverPlannerSettings(req.user.id), entries, totals });
+});
+app.post('/api/driver-planner/entries', allow('driverPlanner'), (req, res) => {
+  try {
+    const item = driverPlannerPayload(req.user.id, req.body);
+    const result = db.prepare(`INSERT INTO driver_planner_entries
+      (user_id, work_date, start_time, deliveries, kilometers, kilograms, end_time, work_hours, extra_hours, daily_amount,
+       delivery_rate, kilometer_rate, kilogram_rate, extra_hour_rate)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(req.user.id, item.workDate, item.startTime, item.deliveries, item.kilometers, item.kilograms, item.endTime,
+        item.workHours, item.extraHours, item.dailyAmount, item.deliveryRate, item.kilometerRate, item.kilogramRate, item.extraHourRate);
+    res.status(201).json(driverPlannerEntry(Number(result.lastInsertRowid), req.user.id));
+  } catch (error) {
+    const duplicate = String(error.message).includes('UNIQUE constraint failed');
+    res.status(duplicate ? 409 : 400).json({ error: duplicate ? 'Ten dzień jest już zapisany. Otwórz go i wybierz „Edytuj”.' : error.message });
+  }
+});
+app.put('/api/driver-planner/entries/:id', allow('driverPlanner'), (req, res) => {
+  const id = Number(req.params.id);
+  if (!driverPlannerEntry(id, req.user.id)) return res.status(404).json({ error: 'Nie znaleziono tego dnia.' });
+  try {
+    const item = driverPlannerPayload(req.user.id, req.body);
+    db.prepare(`UPDATE driver_planner_entries SET work_date=?, start_time=?, deliveries=?, kilometers=?, kilograms=?, end_time=?,
+      work_hours=?, extra_hours=?, daily_amount=?, delivery_rate=?, kilometer_rate=?, kilogram_rate=?, extra_hour_rate=?, updated_at=CURRENT_TIMESTAMP
+      WHERE id=? AND user_id=?`).run(item.workDate, item.startTime, item.deliveries, item.kilometers, item.kilograms,
+      item.endTime, item.workHours, item.extraHours, item.dailyAmount, item.deliveryRate, item.kilometerRate,
+      item.kilogramRate, item.extraHourRate, id, req.user.id);
+    res.json(driverPlannerEntry(id, req.user.id));
+  } catch (error) {
+    const duplicate = String(error.message).includes('UNIQUE constraint failed');
+    res.status(duplicate ? 409 : 400).json({ error: duplicate ? 'Dane dla tego dnia już istnieją.' : error.message });
+  }
+});
+app.delete('/api/driver-planner/entries/:id', allow('driverPlanner'), (req, res) => {
+  const result = db.prepare('DELETE FROM driver_planner_entries WHERE id=? AND user_id=?').run(Number(req.params.id), req.user.id);
+  if (!result.changes) return res.status(404).json({ error: 'Nie znaleziono tego dnia.' });
+  res.status(204).end();
+});
+
 app.get('/api/notifications', (req, res) => {
   syncSystemNotifications();
   const notifications = db.prepare(`SELECT n.id,n.type,n.title,n.message,n.entity_key,n.created_at,CASE WHEN r.notification_id IS NULL THEN 0 ELSE 1 END AS is_read FROM notifications n LEFT JOIN notification_reads r ON r.notification_id=n.id AND r.user_id=? ORDER BY n.id DESC LIMIT 40`).all(req.user.id);
