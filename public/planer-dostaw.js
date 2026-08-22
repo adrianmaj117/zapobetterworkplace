@@ -33,6 +33,10 @@
   const selectedMonth = () => `${state.year}-${two(state.month + 1)}`;
   const number = value => Number(value || 0).toLocaleString('pl-PL', { maximumFractionDigits: 2 });
   const money = value => Number(value || 0).toLocaleString('pl-PL', { style: 'currency', currency: 'PLN' });
+  const hourlyRate = (amount, workHours, extraHours = 0) => {
+    const hours = Number(workHours || 0) + Number(extraHours || 0);
+    return hours > 0 ? Number(amount || 0) / hours : null;
+  };
   const dateLabel = value => new Date(`${value}T12:00:00`).toLocaleDateString('pl-PL', { weekday: 'long', day: 'numeric', month: 'long' });
   const numericInput = selector => Number($(selector).value || 0);
 
@@ -51,12 +55,16 @@
     $('#sumKilograms').textContent = `${number(totals.kilograms)} kg`;
     $('#sumHours').textContent = `${number(totals.work_hours)} h`;
     $('#sumAmount').textContent = money(totals.daily_amount);
+    const monthHourly = hourlyRate(totals.daily_amount, totals.work_hours, totals.extra_hours);
+    $('#sumHourly').textContent = monthHourly === null ? '—' : money(monthHourly);
   }
   function renderEntries() {
     const empty = !state.entries.length;
     $('#entriesEmpty').hidden = !empty;
     $('#entriesTableWrap').hidden = empty;
-    $('#entriesBody').innerHTML = state.entries.map(entry => `<tr>
+    $('#entriesBody').innerHTML = state.entries.map(entry => {
+      const entryHourly = hourlyRate(entry.daily_amount, entry.work_hours, entry.extra_hours);
+      return `<tr>
       <td class="day-cell" data-label="Dzień"><strong>${dateLabel(entry.work_date)}</strong><small>${entry.work_date.split('-').reverse().join('.')}</small></td>
       <td data-label="Rozpoczęcie">${entry.start_time || '—'}</td>
       <td data-label="Dostawy">${number(entry.deliveries)}</td>
@@ -66,8 +74,10 @@
       <td data-label="Czas pracy">${number(entry.work_hours)} h</td>
       <td data-label="Dodatkowe">${number(entry.extra_hours)} h</td>
       <td class="amount-cell" data-label="Kwota">${money(entry.daily_amount)}</td>
+      <td class="amount-cell" data-label="Za godzinę">${entryHourly === null ? '—' : money(entryHourly)}</td>
       <td class="row-actions-cell"><div class="row-actions"><button type="button" data-edit="${entry.id}">Edytuj</button><button type="button" class="delete-entry" data-delete="${entry.id}">Usuń</button></div></td>
-    </tr>`).join('');
+    </tr>`;
+    }).join('');
   }
   async function loadMonth() {
     const data = await api(`/api/driver-planner/entries?month=${selectedMonth()}`);
@@ -97,6 +107,8 @@
       + numericInput('#extraHours') * state.settings.extra_hour_rate;
     $('#workHoursPreview').textContent = `${number(hours)} h`;
     $('#amountPreview').textContent = money(amount);
+    const previewHourly = hourlyRate(amount, hours, numericInput('#extraHours'));
+    $('#hourlyPreview').textContent = previewHourly === null ? '—' : money(previewHourly);
     $('#formulaPreview').textContent = `${number(numericInput('#deliveries'))} dost. × ${money(state.settings.delivery_rate)} + ${number(numericInput('#kilometers'))} km × ${money(state.settings.kilometer_rate)} + ${number(numericInput('#kilograms'))} kg × ${money(state.settings.kilogram_rate)} + ${number(numericInput('#extraHours'))} h × ${money(state.settings.extra_hour_rate)}`;
   }
   function openEntry(entry = null, quick = false) {

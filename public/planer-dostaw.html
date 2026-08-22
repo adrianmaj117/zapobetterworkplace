@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Fraunces:opsz,wght@9..144,600;9..144,700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="planer-dostaw.css?v=2">
+  <link rel="stylesheet" href="planer-dostaw.css?v=3">
   <script src="dark-mode.js"></script>
 </head>
 <body>
@@ -64,6 +64,7 @@
         <article><span>Kilogramy</span><strong id="sumKilograms">0 kg</strong><small>dostarczone</small></article>
         <article><span>Czas pracy</span><strong id="sumHours">0 h</strong><small>bez dodatkowych</small></article>
         <article class="money-summary"><span>Kwota za miesiąc</span><strong id="sumAmount">0,00 zł</strong><small>według zapisanych stawek</small></article>
+        <article class="hourly-summary"><span>Wyszło za godzinę</span><strong id="sumHourly">—</strong><small>kwota ÷ wszystkie godziny</small></article>
       </div>
     </section>
 
@@ -72,7 +73,7 @@
       <div id="entriesEmpty" class="empty-state" hidden><div>🚚</div><h3>Ten miesiąc jest jeszcze pusty</h3><p>Dodaj pierwszy dzień pracy przyciskiem „Szybki wpis”.</p></div>
       <div id="entriesTableWrap" class="entries-table-wrap">
         <table class="entries-table">
-          <thead><tr><th>Dzień</th><th>Rozpoczęcie</th><th>Dostawy</th><th>Kilometry</th><th>Kilogramy</th><th>Zakończenie</th><th>Czas pracy</th><th>Dodatkowe</th><th>Kwota</th><th></th></tr></thead>
+          <thead><tr><th>Dzień</th><th>Rozpoczęcie</th><th>Dostawy</th><th>Kilometry</th><th>Kilogramy</th><th>Zakończenie</th><th>Czas pracy</th><th>Dodatkowe</th><th>Kwota</th><th>Za godzinę</th><th></th></tr></thead>
           <tbody id="entriesBody"></tbody>
         </table>
       </div>
@@ -95,6 +96,7 @@
       <div class="calculation-card">
         <div><span>Czas pracy</span><strong id="workHoursPreview">0 h</strong></div>
         <div><span>Kwota za dzień</span><strong id="amountPreview">0,00 zł</strong></div>
+        <div><span>Wyszło za godzinę</span><strong id="hourlyPreview">—</strong></div>
         <p id="formulaPreview">Uzupełnij wyniki, aby zobaczyć obliczenie.</p>
       </div>
       <div id="entryError" class="form-error" role="alert"></div>
@@ -119,6 +121,6 @@
 
   <div id="toast" class="planner-toast" role="status"></div>
   <div id="pageLoader" class="page-loader"><img src="assets/daily-fruits-logo.png" alt=""><span>Ładowanie planera…</span></div>
-  <script src="planer-dostaw.js?v=2" defer></script>
+  <script src="planer-dostaw.js?v=3" defer></script>
 </body>
 </html>
