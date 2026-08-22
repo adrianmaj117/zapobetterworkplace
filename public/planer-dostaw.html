@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Fraunces:opsz,wght@9..144,600;9..144,700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="planer-dostaw.css?v=3">
+  <link rel="stylesheet" href="planer-dostaw.css?v=4">
   <script src="dark-mode.js"></script>
 </head>
 <body>
@@ -63,6 +63,7 @@
         <article><span>Kilometry</span><strong id="sumKilometers">0 km</strong><small>przejechane</small></article>
         <article><span>Kilogramy</span><strong id="sumKilograms">0 kg</strong><small>dostarczone</small></article>
         <article><span>Czas pracy</span><strong id="sumHours">0 h</strong><small>bez dodatkowych</small></article>
+        <article><span>Dodatkowe godziny</span><strong id="sumExtraHours">0 h</strong><small>poza czasem pracy</small></article>
         <article class="money-summary"><span>Kwota za miesiąc</span><strong id="sumAmount">0,00 zł</strong><small>według zapisanych stawek</small></article>
         <article class="hourly-summary"><span>Wyszło za godzinę</span><strong id="sumHourly">—</strong><small>kwota ÷ wszystkie godziny</small></article>
       </div>
@@ -121,6 +122,6 @@
 
   <div id="toast" class="planner-toast" role="status"></div>
   <div id="pageLoader" class="page-loader"><img src="assets/daily-fruits-logo.png" alt=""><span>Ładowanie planera…</span></div>
-  <script src="planer-dostaw.js?v=3" defer></script>
+  <script src="planer-dostaw.js?v=4" defer></script>
 </body>
 </html>

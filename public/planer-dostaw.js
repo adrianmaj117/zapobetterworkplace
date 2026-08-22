@@ -54,6 +54,7 @@
     $('#sumKilometers').textContent = `${number(totals.kilometers)} km`;
     $('#sumKilograms').textContent = `${number(totals.kilograms)} kg`;
     $('#sumHours').textContent = `${number(totals.work_hours)} h`;
+    $('#sumExtraHours').textContent = `${number(totals.extra_hours)} h`;
     $('#sumAmount').textContent = money(totals.daily_amount);
     const monthHourly = hourlyRate(totals.daily_amount, totals.work_hours, totals.extra_hours);
     $('#sumHourly').textContent = monthHourly === null ? '—' : money(monthHourly);
